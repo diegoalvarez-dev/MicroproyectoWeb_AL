@@ -1,0 +1,25 @@
+{
+  "name": "al-microproyecto",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Microproyecto AL: diseño, conversión y minimización de autómatas finitos",
+  "scripts": {
+    "dev": "vite",
+    "dev:api": "python -m uvicorn api.index:app --reload --port 8000",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test:api": "python tests/test_designer.py"
+  },
+  "dependencies": {
+    "framer-motion": "^12.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "tailwindcss": "^4.1.0",
+    "vite": "^7.0.0"
+  }
+}

@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  background: #060919;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: #e8ebff;
+  font-family: var(--font-sans);
+  background:
+    radial-gradient(900px 520px at 6% -8%, rgba(124, 92, 255, 0.3), transparent 60%),
+    radial-gradient(800px 520px at 100% 0%, rgba(34, 211, 238, 0.16), transparent 55%),
+    radial-gradient(700px 600px at 50% 125%, rgba(244, 114, 182, 0.1), transparent 60%), #060919;
+  background-attachment: fixed;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-radius: 1.25rem;
+}
+
+.field {
+  background: rgba(8, 12, 34, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.75rem;
+  padding: 0.45rem 0.7rem;
+  color: inherit;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field:focus {
+  border-color: #22d3ee;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.18);
+}
+select.field option {
+  background: #0b1030;
+  color: #e8ebff;
+}
+
+.sym {
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.grad-text {
+  background: linear-gradient(90deg, #a78bfa, #22d3ee);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #7c5cff, #22d3ee);
+  color: #060919;
+  font-weight: 700;
+  border-radius: 0.9rem;
+  box-shadow: 0 10px 30px -10px rgba(124, 92, 255, 0.7);
+  transition: transform 0.15s, filter 0.15s, opacity 0.15s;
+}
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.scroll-thin::-webkit-scrollbar {
+  width: 8px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+}
+
+@keyframes orbit {
+  to {
+    stroke-dashoffset: -60;
+  }
+}
+.orbit {
+  animation: orbit 2.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orbit {
+    animation: none;
+  }
+}
