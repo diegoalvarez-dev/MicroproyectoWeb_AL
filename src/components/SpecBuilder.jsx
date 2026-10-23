@@ -1,6 +1,19 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { LEVELS, MAX_SYMBOLS, MIN_SYMBOLS, SOURCE_LABEL, kindOf, poolFor, sanitizeSpec } from '../lib/spec.js'
+import {
+  LEVELS,
+  MAX_LEN,
+  MAX_RUN,
+  MAX_SYMBOLS,
+  MIN_SYMBOLS,
+  SOURCE_LABEL,
+  blankSpec,
+  kindOf,
+  newRule,
+  noLength,
+  poolFor,
+  sanitizeSpec,
+} from '../lib/spec.js'
 
 function Section({ n, title, hint, children }) {
   return (
@@ -75,6 +88,99 @@ function SymbolSelect({ value, onChange, symbols, blank, label, disabledSymbols 
   )
 }
 
+// Campo numérico: '' = sin límite.
+function NumField({ value, onChange, max, label, placeholder = '—' }) {
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      min={1}
+      max={max}
+      value={value}
+      placeholder={placeholder}
+      aria-label={label}
+      onChange={(e) => {
+        const v = e.target.value
+        onChange(v === '' ? '' : Math.trunc(Number(v)))
+      }}
+      className="field sym w-[4.6rem] py-1.5! text-center"
+    />
+  )
+}
+
+const LEN_MODES = [
+  { value: 'none', label: 'Sin límite' },
+  { value: 'exact', label: 'Longitud exacta' },
+  { value: 'min', label: 'Longitud mínima' },
+  { value: 'max', label: 'Longitud máxima' },
+  { value: 'range', label: 'Entre un mínimo y un máximo' },
+]
+
+function LengthRow({ spec, onChange }) {
+  const L = spec.length
+  const set = (patch) => onChange({ ...spec, length: { ...L, ...patch } })
+  const changeMode = (mode) => {
+    const v = L.min !== '' ? L.min : L.max !== '' ? L.max : 4
+    const patch = {
+      none: { min: '', max: '' },
+      exact: { min: v, max: v },
+      min: { min: v, max: '' },
+      max: { min: '', max: v },
+      range: {
+        min: L.min !== '' ? L.min : 3,
+        max: L.max !== '' ? L.max : Math.min(MAX_LEN, (L.min !== '' ? Number(L.min) : 3) + 3),
+      },
+    }[mode]
+    onChange({ ...spec, length: { mode, ...patch } })
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm text-white/60">
+      <select
+        value={L.mode}
+        onChange={(e) => changeMode(e.target.value)}
+        aria-label="Tipo de límite de longitud de la palabra"
+        className="field py-1.5!"
+      >
+        {LEN_MODES.map((m) => (
+          <option key={m.value} value={m.value}>
+            {m.label}
+          </option>
+        ))}
+      </select>
+      {L.mode === 'exact' && (
+        <>
+          <span>la palabra debe tener exactamente</span>
+          <NumField value={L.min} max={MAX_LEN} label="Longitud exacta" onChange={(v) => set({ min: v, max: v })} />
+          <span>símbolos</span>
+        </>
+      )}
+      {L.mode === 'min' && (
+        <>
+          <span>al menos</span>
+          <NumField value={L.min} max={MAX_LEN} label="Longitud mínima" onChange={(v) => set({ min: v })} />
+          <span>símbolos</span>
+        </>
+      )}
+      {L.mode === 'max' && (
+        <>
+          <span>como máximo</span>
+          <NumField value={L.max} max={MAX_LEN} label="Longitud máxima" onChange={(v) => set({ max: v })} />
+          <span>símbolos</span>
+        </>
+      )}
+      {L.mode === 'range' && (
+        <>
+          <span>entre</span>
+          <NumField value={L.min} max={MAX_LEN} label="Longitud mínima" onChange={(v) => set({ min: v })} />
+          <span>y</span>
+          <NumField value={L.max} max={MAX_LEN} label="Longitud máxima" onChange={(v) => set({ max: v })} />
+          <span>símbolos</span>
+        </>
+      )}
+    </div>
+  )
+}
+
 function RuleRow({ rule, index, spec, onPatch, onRemove }) {
   const forbid = rule.mode === 'forbid'
   const others = spec.alphabet.filter((a) => a !== rule.symbol)
@@ -93,7 +199,7 @@ function RuleRow({ rule, index, spec, onPatch, onRemove }) {
           onChange={(e) =>
             onPatch(
               e.target.value === 'forbid'
-                ? { mode: 'forbid', before: '', after: '' }
+                ? { mode: 'forbid', before: '', after: '', min_run: '', max_run: '' }
                 : { mode: 'allow' },
             )
           }
@@ -130,25 +236,47 @@ function RuleRow({ rule, index, spec, onPatch, onRemove }) {
       </div>
 
       {!forbid && (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-sm text-white/60">
-          <span>siempre y cuando vayan</span>
-          <span>precedidas de</span>
-          <SymbolSelect
-            value={rule.before}
-            onChange={(v) => onPatch({ before: v })}
-            symbols={others}
-            blank="— cualquiera —"
-            label="Símbolo que debe preceder"
-          />
-          <span>y seguidas de</span>
-          <SymbolSelect
-            value={rule.after}
-            onChange={(v) => onPatch({ after: v })}
-            symbols={others}
-            blank="— cualquiera —"
-            label="Símbolo que debe seguir"
-          />
-        </div>
+        <>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-sm text-white/60">
+            <span>con una longitud</span>
+            <span>mínima de</span>
+            <NumField
+              value={rule.min_run}
+              max={MAX_RUN}
+              label="Longitud mínima de la subcadena"
+              placeholder="sin"
+              onChange={(v) => onPatch({ min_run: v })}
+            />
+            <span>y máxima de</span>
+            <NumField
+              value={rule.max_run}
+              max={MAX_RUN}
+              label="Longitud máxima de la subcadena"
+              placeholder="sin"
+              onChange={(v) => onPatch({ max_run: v })}
+            />
+            <span>símbolos seguidos</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-sm text-white/60">
+            <span>siempre y cuando vayan</span>
+            <span>precedidas de</span>
+            <SymbolSelect
+              value={rule.before}
+              onChange={(v) => onPatch({ before: v })}
+              symbols={others}
+              blank="— cualquiera —"
+              label="Símbolo que debe preceder"
+            />
+            <span>y seguidas de</span>
+            <SymbolSelect
+              value={rule.after}
+              onChange={(v) => onPatch({ after: v })}
+              symbols={others}
+              blank="— cualquiera —"
+              label="Símbolo que debe seguir"
+            />
+          </div>
+        </>
       )}
     </motion.li>
   )
@@ -158,6 +286,9 @@ const KINDS = [
   { id: 'AFD', title: 'AFD', sub: 'Determinista', desc: 'De cada estado sale exactamente una flecha por símbolo.' },
   { id: 'AFND', title: 'AFND', sub: 'No determinista', desc: 'Un símbolo puede salir de un estado hacia uno o más estados.' },
 ]
+
+const secondaryBtn =
+  'flex items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/5 px-3 py-2.5 text-sm font-medium text-white/80 transition hover:border-white/30 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50'
 
 export default function SpecBuilder({
   spec,
@@ -169,17 +300,20 @@ export default function SpecBuilder({
   building,
   onGenerate,
   generating,
+  onClear,
+  lastLevel,
   flash,
   source,
 }) {
   const [genKind, setGenKind] = useState('random')
   const alphaKind = kindOf(spec.alphabet)
   const pool = poolFor(alphaKind)
+  const lastLevelLabel = LEVELS.find((l) => l.id === lastLevel)?.label ?? 'Fácil'
 
   const switchAlphabet = (k) => {
     if (k === alphaKind) return
     const a = poolFor(k).slice(0, 2)
-    onChange({ alphabet: a, start: a[0], end: a[0], rules: [] })
+    onChange({ ...blankSpec(), alphabet: a, start: a[0], end: a[0], length: spec.length ?? noLength() })
   }
   const toggleSymbol = (s) => {
     const has = spec.alphabet.includes(s)
@@ -194,7 +328,7 @@ export default function SpecBuilder({
   const addRule = () => {
     const free = spec.alphabet.find((a) => !spec.rules.some((r) => r.symbol === a))
     if (!free) return
-    onChange({ ...spec, rules: [...spec.rules, { symbol: free, mode: 'allow', before: '', after: '' }] })
+    onChange({ ...spec, rules: [...spec.rules, newRule(free)] })
   }
   const canAddRule = spec.rules.length < spec.alphabet.length
 
@@ -302,7 +436,12 @@ export default function SpecBuilder({
           </div>
         </Section>
 
-        <Section n="3" title="Reglas de subcadenas" hint="opcional">
+        <Section n="3" title="Longitud de la palabra" hint="opcional">
+          <LengthRow spec={spec} onChange={onChange} />
+          <p className="text-xs text-white/45">Cuántos símbolos tiene la palabra completa (máximo {MAX_LEN}).</p>
+        </Section>
+
+        <Section n="4" title="Reglas de subcadenas" hint="opcional">
           <ul className="space-y-2.5">
             <AnimatePresence initial={false}>
               {spec.rules.map((r, i) => (
@@ -326,8 +465,9 @@ export default function SpecBuilder({
             + Agregar regla
           </button>
           <p className="text-xs text-white/45">
-            Sin una regla en contra, cualquier símbolo puede repetirse. Una regla «precedidas / seguidas» aplica a todo
-            bloque de ese símbolo.
+            Sin una regla en contra, cualquier símbolo puede repetirse sin límite. La longitud de una subcadena es
+            cuántos símbolos iguales van seguidos (máximo {MAX_RUN}); «precedidas / seguidas» aplica a todo bloque de
+            ese símbolo.
           </p>
         </Section>
 
@@ -418,6 +558,27 @@ export default function SpecBuilder({
           </svg>
           {building ? 'Diseñando…' : `Diseñar ${kind}`}
         </button>
+
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={onClear} className={secondaryBtn}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v6M14 10v6" />
+            </svg>
+            Limpiar campos
+          </button>
+          <button
+            type="button"
+            onClick={() => onGenerate(lastLevel, genKind)}
+            disabled={generating}
+            title={`Genera otro ejercicio de nivel ${lastLevelLabel}`}
+            className={secondaryBtn}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5" />
+            </svg>
+            Generar nuevo · {lastLevelLabel}
+          </button>
+        </div>
       </section>
     </div>
   )

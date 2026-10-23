@@ -25,6 +25,13 @@ class RuleIn(BaseModel):
     mode: Literal["allow", "forbid"] = "allow"
     before: Optional[str] = None
     after: Optional[str] = None
+    min_run: Optional[int] = None  # longitud mínima de cada subcadena
+    max_run: Optional[int] = None  # longitud máxima de cada subcadena
+
+
+class LengthIn(BaseModel):
+    min: Optional[int] = None
+    max: Optional[int] = None
 
 
 class SpecIn(BaseModel):
@@ -32,6 +39,7 @@ class SpecIn(BaseModel):
     start: str = ""
     end: str = ""
     rules: List[RuleIn] = []
+    length: Optional[LengthIn] = None  # longitud total de la palabra
 
 
 class SpecBody(BaseModel):

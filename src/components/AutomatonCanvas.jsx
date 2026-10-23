@@ -45,14 +45,14 @@ function Edge({ edge, symbols, tone }) {
       >
         <rect
           x={edge.label.x - w / 2}
-          y={edge.label.y - 12}
+          y={edge.label.y - edge.label.h / 2}
           width={w}
-          height={24}
+          height={edge.label.h}
           rx={12}
           fill="#060919"
-          fillOpacity={0.92}
+          fillOpacity={0.94}
           stroke={color}
-          strokeOpacity={0.7}
+          strokeOpacity={0.75}
         />
         <text
           x={edge.label.x}
@@ -105,6 +105,7 @@ function Node({ id, pos, state, tone }) {
   )
 }
 
+// Dibuja el contenido (estados y flechas); el <svg> y el zoom los pone PanZoom.
 export default function AutomatonCanvas({ automaton, layout, visible, highlight, last }) {
   const byId = Object.fromEntries(automaton.states.map((s) => [s.id, s]))
 
@@ -123,19 +124,7 @@ export default function AutomatonCanvas({ automaton, layout, visible, highlight,
   const initTone = nodeTone(automaton.initial)
 
   return (
-    <svg
-      viewBox={`0 0 ${layout.width} ${layout.height}`}
-      className="h-auto w-full"
-      role="img"
-      aria-label="Diagrama de transición del autómata"
-    >
-      <defs>
-        <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
-          <circle cx="1.5" cy="1.5" r="1.2" fill="rgba(255,255,255,0.07)" />
-        </pattern>
-      </defs>
-      <rect width={layout.width} height={layout.height} fill="url(#dots)" />
-
+    <>
       {layout.edges.map((e) => {
         const symbols = visible.edges.get(e.key)
         if (!symbols) return null
@@ -154,6 +143,6 @@ export default function AutomatonCanvas({ automaton, layout, visible, highlight,
           <Node key={s.id} id={s.id} pos={layout.nodes[s.id]} state={s} tone={nodeTone(s.id)} />
         ) : null,
       )}
-    </svg>
+    </>
   )
 }

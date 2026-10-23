@@ -51,3 +51,12 @@ python tests/test_designer.py
 - «No pueden existir subcadenas de X»: no puede haber dos X seguidas (una sola sí).
 - «Pueden existir subcadenas de X precedidas de A y seguidas de B»: todo bloque de X debe tener A justo antes y B justo después.
 - Los autómatas son completos: lo que incumple una regla va al estado `error`, con rizo de todo el alfabeto.
+
+
+## Modulo 1(Por mejorar)
+- Falta algunas indicaciones, por ejemplo que la suma total de VA sea "". Aca toca mirar que tenga coherencia ya que no puede existir una regla que diga que la suma de 2 sea 5 ya que eso es algo imposible.
+- La validacion de la palabra a ingresar se sugiere que aparezca en el automata ahi arriba y no en el cuadro de texto. o se puede colocar en la parte superior encima del canvas del automata para ver mejor en vez de abajo.
+- Debe mostrarse la gramatica final una vez se cree el automata finito(Buscar estructura)
+- Pueden existir varios estados terminales si el ejercicio lo requiere, no es necesario que solo sea uno pero si queda un solo estado y cumple mucho mejor.
+- Es recomendable que las reglas vayan separadas osea no se complementen.
+- Colocar velocidades para validar palabra.

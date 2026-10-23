@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import SpecBuilder from './SpecBuilder.jsx'
 import AutomatonCanvas from './AutomatonCanvas.jsx'
+import PanZoom from './PanZoom.jsx'
 import StepPlayer from './StepPlayer.jsx'
 import WordTester from './WordTester.jsx'
 import HistoryPanel from './HistoryPanel.jsx'
 import { api } from '../lib/api.js'
 import { computeLayout } from '../lib/layout.js'
 import { runHighlight } from '../lib/highlight.js'
-import { defaultSpec, fromApi, specKey } from '../lib/spec.js'
+import { blankSpec, defaultSpec, specKey, toUi } from '../lib/spec.js'
 import { loadHistory, saveHistory } from '../lib/history.js'
 
 const EMPTY_VALIDATION = {
@@ -71,6 +72,7 @@ export default function DesignerModule() {
   const [spec, setSpecRaw] = useState(defaultSpec)
   const [kind, setKind] = useState('AFD')
   const [source, setSource] = useState('manual')
+  const [lastLevel, setLastLevel] = useState('facil')
   const [flash, setFlash] = useState(0)
   const [validation, setValidation] = useState(EMPTY_VALIDATION)
   const [built, setBuilt] = useState(null)
@@ -80,7 +82,9 @@ export default function DesignerModule() {
   const [run, setRun] = useState(null)
   const [busy, setBusy] = useState(null) // 'build' | 'generate' | 'word'
   const [netError, setNetError] = useState('')
+  const [full, setFull] = useState(false)
   const [history, setHistory] = useState(loadHistory)
+  const buildCounter = useRef(0)
 
   const updateSpec = useCallback((next) => {
     setSpecRaw(next)
@@ -139,6 +143,19 @@ export default function DesignerModule() {
     if (stale) setRun(null)
   }, [stale])
 
+  // pantalla completa: Esc la cierra y la página de atrás no se desplaza
+  useEffect(() => {
+    if (!full) return undefined
+    const onKey = (e) => e.key === 'Escape' && setFull(false)
+    window.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [full])
+
   // ---- acciones ---------------------------------------------------------
   const pushHistory = useCallback((entry) => {
     setHistory((prev) => {
@@ -159,7 +176,16 @@ export default function DesignerModule() {
           return
         }
         const key = specKey(useSpec, useKind)
-        setBuilt({ automaton: r.automaton, steps: r.steps, text: r.text, spec: useSpec, kind: useKind, key })
+        buildCounter.current += 1
+        setBuilt({
+          uid: buildCounter.current,
+          automaton: r.automaton,
+          steps: r.steps,
+          text: r.text,
+          spec: useSpec,
+          kind: useKind,
+          key,
+        })
         setIdx(0)
         setPlaying(true)
         setNetError('')
@@ -177,8 +203,9 @@ export default function DesignerModule() {
     setBusy('generate')
     try {
       const r = await api.generate(level, alphabetKind)
-      setSpecRaw(fromApi(r.spec))
+      setSpecRaw(toUi(r.spec))
       setSource(level)
+      setLastLevel(level)
       setFlash((f) => f + 1)
       setNetError('')
     } catch {
@@ -186,6 +213,19 @@ export default function DesignerModule() {
     } finally {
       setBusy(null)
     }
+  }
+
+  // «Limpiar campos»: deja el formulario vacío y quita el diagrama y la palabra de prueba
+  const handleClear = () => {
+    setSpecRaw(blankSpec())
+    setSource('manual')
+    setBuilt(null)
+    setRun(null)
+    setIdx(0)
+    setPlaying(false)
+    setFull(false)
+    setNetError('')
+    setFlash((f) => f + 1)
   }
 
   const handleRunWord = async (word) => {
@@ -204,10 +244,11 @@ export default function DesignerModule() {
   }
 
   const loadFromHistory = (item) => {
-    const s = fromApi(item.spec)
+    const s = toUi(item.spec)
     setSpecRaw(s)
     setKind(item.kind)
     setSource(item.source)
+    if (item.source !== 'manual') setLastLevel(item.source)
     setFlash((f) => f + 1)
     build(s, item.kind, item.source)
   }
@@ -248,6 +289,8 @@ export default function DesignerModule() {
           building={busy === 'build'}
           onGenerate={handleGenerate}
           generating={busy === 'generate'}
+          onClear={handleClear}
+          lastLevel={lastLevel}
           flash={flash}
           source={source}
         />
@@ -268,8 +311,14 @@ export default function DesignerModule() {
           )}
         </AnimatePresence>
 
-        <div className="glass overflow-hidden p-5">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div
+          className={
+            full
+              ? 'fixed inset-0 z-50 m-0! flex flex-col gap-3 overflow-y-auto bg-[#060919] p-4'
+              : 'glass overflow-hidden p-5'
+          }
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-bold">
               {built ? (
                 <>
@@ -290,7 +339,13 @@ export default function DesignerModule() {
 
           {built && layout ? (
             <>
-              <div className="rounded-2xl border border-white/8 bg-[#070b1f]/70 p-2">
+              <PanZoom
+                bounds={layout.bounds}
+                resetKey={`${built.uid}-${full}`}
+                expanded={full}
+                onToggleExpand={() => setFull((v) => !v)}
+                className={full ? 'min-h-0 flex-1' : 'h-[460px] sm:h-[560px]'}
+              >
                 <AutomatonCanvas
                   automaton={built.automaton}
                   layout={layout}
@@ -298,24 +353,20 @@ export default function DesignerModule() {
                   highlight={highlight}
                   last={run ? null : visible.last}
                 />
-              </div>
+              </PanZoom>
               {built.automaton.note && (
-                <p className="mt-3 rounded-lg bg-amber-300/10 px-3 py-2 text-xs text-amber-100">{built.automaton.note}</p>
+                <p className="rounded-lg bg-amber-300/10 px-3 py-2 text-xs text-amber-100">{built.automaton.note}</p>
               )}
-              <div className="mt-3">
-                <Legend />
-              </div>
-              <div className="mt-4">
-                <StepPlayer
-                  steps={built.steps}
-                  idx={idx}
-                  setIdx={setIdx}
-                  playing={playing}
-                  setPlaying={setPlaying}
-                  speed={speed}
-                  setSpeed={setSpeed}
-                />
-              </div>
+              <Legend />
+              <StepPlayer
+                steps={built.steps}
+                idx={idx}
+                setIdx={setIdx}
+                playing={playing}
+                setPlaying={setPlaying}
+                speed={speed}
+                setSpeed={setSpeed}
+              />
             </>
           ) : (
             <EmptyCanvas />
@@ -323,6 +374,7 @@ export default function DesignerModule() {
         </div>
 
         <WordTester
+          key={flash}
           enabled={canTest}
           stale={stale}
           examples={validation.examples}

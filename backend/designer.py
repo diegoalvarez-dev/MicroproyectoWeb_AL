@@ -4,11 +4,16 @@ Se construye siempre un autómata COMPLETO (equilibrado): cada estado tiene una
 transición por cada símbolo del alfabeto y lo que incumple las reglas va al
 estado `error`, que tiene un rizo con todo el alfabeto y no es final.
 
-  * AFD : monitor (último símbolo leído) -> minimización de Moore.
-  * AFND: el mismo monitor, pero en lugar de recordar si el último símbolo fue
-          el final, se "adivina" con no determinismo: al leer el símbolo final
-          se puede ir a un estado final F ("esta es la última letra") o seguir.
-          Luego se descartan estados inútiles y se fusionan los bisimilares.
+Ambos autómatas parten de un "monitor" determinista cuyo estado recuerda el
+último símbolo leído, cuántos van seguidos y cuántos símbolos lleva la palabra
+(solo lo necesario para las reglas pedidas):
+
+  * AFD : monitor -> minimización de Moore.
+  * AFND: el mismo monitor, pero en lugar de marcar finales los estados donde la
+          palabra puede terminar, se "adivina" con no determinismo: al llegar a un
+          estado donde puede terminar se puede ir a un estado final F ("esta es la
+          última letra") o seguir leyendo. Luego se descartan los estados inútiles
+          y se fusionan los equivalentes (bisimulación).
 
 Cada construcción devuelve también la lista de `steps` que el frontend anima.
 """
@@ -25,9 +30,12 @@ from .rules import (
     DEAD,
     START,
     check_word_direct,
+    length_bounds,
     monitor_accepting,
     monitor_next,
+    pos_cap,
     rules_by_symbol,
+    run_bounds,
 )
 
 FIN = "F"  # estado final "adivinado" del AFND
@@ -37,17 +45,32 @@ def _qnum(name):
     return 10**6 if name == ERROR_ID else int(name[1:])
 
 
-def _meaning(members, finals_hint=False):
+def _meaning(spec, rules, members):
+    """Qué significa un estado, en palabras."""
     if START in members:
-        text = "estado inicial: todavía no se ha leído ningún símbolo"
-    elif FIN in members:
-        text = "estado final: la palabra termina aquí, con el último símbolo leído"
-    else:
-        syms = [m for m in members if m not in (START, DEAD, FIN)]
-        if len(syms) == 1:
-            text = f"se llega aquí después de leer {syms[0]}"
+        return "estado inicial: todavía no se ha leído ningún símbolo"
+    if FIN in members:
+        return "estado final: la palabra termina aquí, con el último símbolo leído"
+    monitors = [m for m in members if isinstance(m, tuple)]
+    if len(monitors) != 1:
+        syms = []
+        for p, _, _ in monitors:
+            if p not in syms:
+                syms.append(p)
+        return "se llega aquí después de leer " + " o ".join(syms) + " (comportamiento idéntico)"
+    p, r, pos = monitors[0]
+    text = f"se llega aquí después de leer {p}"
+    lo, hi = run_bounds(rules.get(p, {}))
+    if hi is None and lo > 1:
+        text += f" ({'al menos ' if r >= lo else ''}{r} {p} seguidos)"
+    elif hi is not None and hi > 1:
+        text += f" ({r} {p} seguidos)"
+    if pos_cap(spec):
+        mn, mx = length_bounds(spec)
+        if mx is None and mn is not None and pos >= mn:
+            text += f"; la palabra ya tiene al menos {pos} símbolos"
         else:
-            text = "se llega aquí después de leer " + " o ".join(syms) + " (comportamiento idéntico)"
+            text += f"; la palabra lleva {pos} símbolos"
     return text
 
 
@@ -139,19 +162,32 @@ def _assemble(kind, spec, order, error_b, delta, finals, reasons, meaning):
     return automaton, steps
 
 
+def explore_monitor(spec, rules):
+    """Todos los estados alcanzables del monitor, con sus transiciones."""
+    alphabet = spec["alphabet"]
+    delta, reason = {}, {}
+    order = [START]
+    seen = {START}
+    i = 0
+    while i < len(order):
+        m = order[i]
+        i += 1
+        for c in alphabet:
+            t, why = monitor_next(spec, rules, m, c)
+            delta[(m, c)], reason[(m, c)] = t, why
+            if t not in seen:
+                seen.add(t)
+                order.append(t)
+    return order, delta, reason
+
+
 # ---------------------------------------------------------------------------
 # AFD
 # ---------------------------------------------------------------------------
 def build_dfa(spec):
     alphabet = spec["alphabet"]
     rules = rules_by_symbol(spec)
-    mstates = [START] + alphabet + [DEAD]
-    delta, reason = {}, {}
-    for m in mstates:
-        for c in alphabet:
-            delta[(m, c)], reason[(m, c)] = monitor_next(spec, rules, m, c)
-
-    order = bfs_order(START, alphabet, lambda m, a: [delta[(m, a)]])
+    order, delta, reason = explore_monitor(spec, rules)
     accepting = {m for m in order if monitor_accepting(spec, rules, m)}
     block = moore_partition(order, alphabet, delta, accepting)
 
@@ -180,9 +216,9 @@ def build_dfa(spec):
         if b == error_b:
             meaning[b] = "aquí se cae cuando se incumple alguna regla; no es final y no tiene salida útil"
         else:
-            text = _meaning(ms)
+            text = _meaning(spec, rules, ms)
             if b in acc_blocks:
-                text += f"; puede terminar aquí porque el último símbolo es {spec['end']}"
+                text += f"; puede terminar aquí porque el último símbolo es {spec['end']} y ya se cumple todo lo pedido"
             meaning[b] = text
     return _assemble("AFD", spec, order_b, error_b, bdelta, acc_blocks, reasons, meaning)
 
@@ -193,16 +229,16 @@ def build_dfa(spec):
 def build_nfa(spec):
     alphabet = spec["alphabet"]
     rules = rules_by_symbol(spec)
-    end = spec["end"]
-    end_can_close = not rules.get(end, {}).get("after")
+    order_m, delta_m, reason_m = explore_monitor(spec, rules)
+    accepting = {m for m in order_m if monitor_accepting(spec, rules, m)}
 
     delta, reason = {}, {}
-    for m in [START] + alphabet:
+    for m in order_m:
         for c in alphabet:
-            t, why = monitor_next(spec, rules, m, c)
+            t, why = delta_m[(m, c)], reason_m[(m, c)]
             tg = {t}
             reason[(m, c, t)] = why
-            if t != DEAD and c == end and end_can_close:
+            if t != DEAD and t in accepting:
                 tg.add(FIN)
                 reason[(m, c, FIN)] = (
                     f"No determinismo: este {c} puede ser el último símbolo de la palabra, por eso también puede ir al estado final."
@@ -215,7 +251,6 @@ def build_nfa(spec):
         delta[(DEAD, c)] = {DEAD}
         reason[(DEAD, c, DEAD)] = "error es un estado trampa: no se puede salir de él."
 
-    nodes = [START] + alphabet + [DEAD, FIN]
     reach = bfs_order(START, alphabet, lambda m, a: delta[(m, a)])
     alive = can_reach(reach, alphabet, lambda m, a: delta[(m, a)], {FIN})
 
@@ -232,11 +267,8 @@ def build_nfa(spec):
             if len(tg) > 1:
                 tg.discard(DEAD)  # error nunca aporta a un conjunto con otros destinos
             folded[(m, c)] = tg
-    kept = [m for m in reach if m in alive]
-    if DEAD in reach or any(DEAD in tg for tg in folded.values()):
-        kept.append(DEAD)
-        for c in alphabet:
-            folded[(DEAD, c)] = {DEAD}
+    for c in alphabet:
+        folded[(DEAD, c)] = {DEAD}
     kept = bfs_order(START, alphabet, lambda m, a: folded[(m, a)])
 
     block = bisimulation_partition(kept, alphabet, folded, {FIN})
@@ -258,7 +290,7 @@ def build_nfa(spec):
                 # busca la explicación en cualquier miembro/destino equivalente
                 text = None
                 for m in members[b]:
-                    for o in sorted(delta[(m, a)]):
+                    for o in sorted(delta[(m, a)], key=str):
                         if block.get(fold(o)) == t:
                             text = reason.get((m, a, o))
                             break
@@ -272,7 +304,7 @@ def build_nfa(spec):
         if b == error_b:
             meaning[b] = "aquí se cae cuando se incumple alguna regla; no es final y no tiene salida útil"
         else:
-            meaning[b] = _meaning(ms)
+            meaning[b] = _meaning(spec, rules, ms)
     automaton, steps = _assemble("AFND", spec, order_b, error_b, bdelta, {block[FIN]}, reasons, meaning)
     if automaton["deterministic"]:
         automaton["note"] = (
@@ -362,20 +394,21 @@ def check_word(spec, kind, word):
     automaton, _ = build(spec, kind)
     res = run_word(automaton, word)
     direct = check_word_direct(spec, word)
-    fail_index = next((p["index"] for p in res["path"] if not p["ok"]), None)
+    dead_at = next((p["index"] for p in res["path"] if not p["ok"]), None)  # cae a error aquí
+    fail_index = dead_at
     if fail_index is None and not res["accepted"]:
-        fail_index = len(word) - 1 if word else 0
+        fail_index = len(word) - 1 if word else 0  # no cayó a error: termina mal, se marca el último
     if res["accepted"]:
         reason = "La palabra cumple todas las indicaciones."
     elif (
-        fail_index is not None
+        dead_at is not None
         and direct["index"] is not None
-        and fail_index < direct["index"]
-        and fail_index < len(word)
+        and dead_at < direct["index"]
+        and dead_at < len(word)
     ):
         # el autómata detecta antes que la palabra ya no tiene salida
         reason = (
-            f"Con el símbolo {word[fail_index]} (posición {fail_index + 1}) la palabra ya no puede "
+            f"Con el símbolo {word[dead_at]} (posición {dead_at + 1}) la palabra ya no puede "
             f"cumplir las indicaciones. {direct['reason']}"
         )
     else:
