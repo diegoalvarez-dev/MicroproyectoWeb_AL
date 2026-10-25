@@ -111,7 +111,7 @@ export default function AutomatonCanvas({ automaton, layout, visible, highlight,
 
   const nodeTone = (id) => {
     if (highlight.nodes[id]) return highlight.nodes[id]
-    if (last && last.kind === 'state' && last.state === id) return 'new'
+    if (last && last.state === id) return 'new' // estado recién creado (paso «state» o celda que lo creó)
     return byId[id].error ? 'error' : 'base'
   }
   const edgeTone = (e) => {

@@ -5,7 +5,7 @@ Vercel:  detecta `app` en api/index.py y lo despliega junto al frontend.
 """
 import sys
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 from fastapi import APIRouter, FastAPI  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
+from backend import converter  # noqa: E402
 from backend.designer import build, check_word  # noqa: E402
 from backend.generator import LEVELS, generate_spec  # noqa: E402
 from backend.rules import spec_sentences  # noqa: E402
@@ -51,6 +52,22 @@ class BuildBody(SpecBody):
 
 
 class WordBody(BuildBody):
+    word: str = ""
+
+
+class NfaIn(BaseModel):
+    alphabet: List[str] = []
+    states: List[str] = []
+    initial: str = ""
+    finals: List[str] = []
+    delta: Dict[str, Dict[str, List[str]]] = {}
+
+
+class NfaBody(BaseModel):
+    nfa: NfaIn
+
+
+class NfaWordBody(NfaBody):
     word: str = ""
 
 
@@ -104,6 +121,64 @@ def designer_check_word(body: WordBody):
 def designer_generate(body: GenerateBody):
     spec = generate_spec(body.level, body.alphabet_kind)
     return {"level": body.level, "spec": spec, "text": spec_sentences(spec)}
+
+
+# ---------------------------------------------------------------------------
+# Módulo 2: AFND -> AFD
+# ---------------------------------------------------------------------------
+def _nfa_checked(body):
+    nfa = converter.normalize_nfa(body.nfa)
+    return nfa, converter.validate_nfa(nfa)
+
+
+@router.post("/converter/validate")
+def converter_validate(body: NfaBody):
+    nfa, result = _nfa_checked(body)
+    if not result["ok"]:
+        return {**result, "automaton": None, "table": []}
+    automaton, table = converter.nfa_view(nfa, result["kind"])
+    return {**result, "automaton": automaton, "table": table}
+
+
+@router.post("/converter/convert")
+def converter_convert(body: NfaBody):
+    nfa, result = _nfa_checked(body)
+    if not result["ok"]:
+        return {**result, "automaton": None, "table": [], "steps": [], "dfa": None}
+    automaton, table = converter.nfa_view(nfa, result["kind"])
+    if result["kind"] == "AFD":
+        return {
+            **result,
+            "ok": False,
+            "errors": ["Este autómata ya es un AFD: no necesita conversión. Para reducirlo se usa la minimización."],
+            "automaton": automaton,
+            "table": table,
+            "steps": [],
+            "dfa": None,
+        }
+    conv = converter.subset_construction(nfa)
+    return {
+        **result,
+        "automaton": automaton,
+        "table": table,
+        "steps": conv["steps"],
+        "dfa": {"automaton": conv["dfa"], "table": conv["table"], "mapping": conv["mapping"]},
+        "examples": converter.sample_words(nfa),
+    }
+
+
+@router.post("/converter/check-word")
+def converter_check_word(body: NfaWordBody):
+    nfa, result = _nfa_checked(body)
+    if not result["ok"]:
+        return {"ok": False, "errors": result["errors"]}
+    return {"ok": True, **converter.check_word(nfa, body.word.strip())}
+
+
+@router.post("/converter/generate")
+def converter_generate(body: GenerateBody):
+    nfa = converter.generate_nfa(body.level, body.alphabet_kind)
+    return {"level": body.level, "nfa": nfa}
 
 
 app.include_router(router)

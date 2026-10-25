@@ -3,9 +3,9 @@ import { motion } from 'framer-motion'
 const TEAM = ['Diego Márquez', 'Juan Quintero', 'Diego Álvarez']
 
 const MODULES = [
-  { id: 1, title: 'Diseño de autómatas', sub: 'AFD · AFND', active: true },
-  { id: 2, title: 'AFND → AFD', sub: 'Próximamente', active: false },
-  { id: 3, title: 'Minimización', sub: 'Próximamente', active: false },
+  { id: 1, title: 'Diseño de autómatas', sub: 'AFD · AFND', ready: true },
+  { id: 2, title: 'AFND → AFD', sub: 'Construcción de subconjuntos', ready: true },
+  { id: 3, title: 'Minimización', sub: 'Próximamente', ready: false },
 ]
 
 function Logo() {
@@ -25,7 +25,7 @@ function Logo() {
   )
 }
 
-export default function Header() {
+export default function Header({ module = 1, onModule = () => {} }) {
   return (
     <header className="mx-auto max-w-[1500px] px-4 pb-6 pt-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -68,30 +68,40 @@ export default function Header() {
       </div>
 
       <nav className="mt-6 grid gap-3 sm:grid-cols-3" aria-label="Módulos">
-        {MODULES.map((m, i) => (
-          <motion.div
-            key={m.id}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 + i * 0.07 }}
-            aria-current={m.active ? 'page' : undefined}
-            className={`glass flex items-center gap-3 px-4 py-3 ${
-              m.active ? 'border-cyan-300/40! bg-cyan-300/[0.07]!' : 'opacity-55'
-            }`}
-          >
-            <span
-              className={`grid h-9 w-9 place-items-center rounded-xl text-sm font-bold ${
-                m.active ? 'bg-gradient-to-br from-violet-500 to-cyan-400 text-[#060919]' : 'bg-white/10'
+        {MODULES.map((m, i) => {
+          const active = m.id === module
+          return (
+            <motion.button
+              key={m.id}
+              type="button"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 + i * 0.07 }}
+              disabled={!m.ready}
+              onClick={() => onModule(m.id)}
+              aria-current={active ? 'page' : undefined}
+              className={`glass flex items-center gap-3 px-4 py-3 text-left transition ${
+                active
+                  ? 'border-cyan-300/40! bg-cyan-300/[0.07]!'
+                  : m.ready
+                    ? 'hover:border-white/30!'
+                    : 'cursor-not-allowed opacity-55'
               }`}
             >
-              {m.id}
-            </span>
-            <span className="leading-tight">
-              <span className="block font-semibold">{m.title}</span>
-              <span className="block text-xs text-white/50">{m.sub}</span>
-            </span>
-          </motion.div>
-        ))}
+              <span
+                className={`grid h-9 w-9 place-items-center rounded-xl text-sm font-bold ${
+                  active ? 'bg-gradient-to-br from-violet-500 to-cyan-400 text-[#060919]' : 'bg-white/10'
+                }`}
+              >
+                {m.id}
+              </span>
+              <span className="leading-tight">
+                <span className="block font-semibold">{m.title}</span>
+                <span className="block text-xs text-white/50">{m.sub}</span>
+              </span>
+            </motion.button>
+          )
+        })}
       </nav>
     </header>
   )

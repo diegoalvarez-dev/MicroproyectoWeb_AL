@@ -1,34 +1,50 @@
-import { AnimatePresence, motion } from 'framer-motion'
-import { SOURCE_LABEL } from '../lib/spec.js'
+import { AnimatePresence, motion } from "framer-motion";
+import { SOURCE_LABEL } from "../lib/spec.js";
 
 const SOURCE_COLOR = {
-  manual: 'bg-white/10 text-white/60',
-  facil: 'bg-emerald-300/15 text-emerald-200',
-  medio: 'bg-amber-300/15 text-amber-200',
-  dificil: 'bg-rose-400/15 text-rose-200',
-}
+  manual: "bg-white/10 text-white/60",
+  facil: "bg-emerald-300/15 text-emerald-200",
+  medio: "bg-amber-300/15 text-amber-200",
+  dificil: "bg-rose-400/15 text-rose-200",
+};
 
 const fmt = (ts) =>
-  new Date(ts).toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+  new Date(ts).toLocaleString("es-CO", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
-export default function HistoryPanel({ items, onLoad, onDelete, onClear }) {
+export default function HistoryPanel({
+  items,
+  onLoad,
+  onDelete,
+  onClear,
+  emptyText = "Cada autómata que diseñes queda guardado aquí, en este navegador, para retomarlo cuando quieras.",
+}) {
   return (
     <div className="glass space-y-3 p-5">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold">
-          Historial <span className="text-sm font-normal text-white/40">({items.length})</span>
+          Historial{" "}
+          <span className="text-sm font-normal text-white/40">
+            ({items.length})
+          </span>
         </h2>
         {items.length > 0 && (
-          <button type="button" onClick={onClear} className="text-xs text-white/45 transition hover:text-rose-300">
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-xs text-white/45 transition hover:text-rose-300"
+          >
             Borrar todo
           </button>
         )}
       </div>
 
       {items.length === 0 ? (
-        <p className="text-sm text-white/45">
-          Cada autómata que diseñes queda guardado aquí, en este navegador, para retomarlo cuando quieras.
-        </p>
+        <p className="text-sm text-white/45">{emptyText}</p>
       ) : (
         <ul className="scroll-thin max-h-80 space-y-2 overflow-y-auto pr-1">
           <AnimatePresence initial={false}>
@@ -43,14 +59,21 @@ export default function HistoryPanel({ items, onLoad, onDelete, onClear }) {
               >
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className={`rounded-full px-2 py-0.5 font-semibold ${SOURCE_COLOR[it.source]}`}>
+                    <span
+                      className={`rounded-full px-2 py-0.5 font-semibold ${SOURCE_COLOR[it.source]}`}
+                    >
                       {SOURCE_LABEL[it.source]}
                     </span>
-                    <span className="rounded-full bg-cyan-300/15 px-2 py-0.5 font-semibold text-cyan-200">{it.kind}</span>
+                    <span className="rounded-full bg-cyan-300/15 px-2 py-0.5 font-semibold text-cyan-200">
+                      {it.kind}
+                    </span>
                     <span className="text-white/35">{fmt(it.ts)}</span>
                   </div>
-                  <p className="truncate text-sm text-white/80" title={it.text.join(' ')}>
-                    {it.text.slice(1).join(' ')}
+                  <p
+                    className="truncate text-sm text-white/80"
+                    title={it.text.join(" ")}
+                  >
+                    {it.text.slice(1).join(" ")}
                   </p>
                   <p className="sym text-xs text-white/40">{it.text[0]}</p>
                 </div>
@@ -77,5 +100,5 @@ export default function HistoryPanel({ items, onLoad, onDelete, onClear }) {
         </ul>
       )}
     </div>
-  )
+  );
 }

@@ -60,3 +60,8 @@ python tests/test_designer.py
 - Pueden existir varios estados terminales si el ejercicio lo requiere, no es necesario que solo sea uno pero si queda un solo estado y cumple mucho mejor.
 - Es recomendable que las reglas vayan separadas osea no se complementen.
 - Colocar velocidades para validar palabra.
+
+## Modulo 2(Por mejorar)
+- Es responsivo pero toca mejorarlo para que se vea un poco mejor en moviles.
+- Ajustar de que uno pueda digitar el estado ahi mismo y no por medio del formulario
+- Agregar como queda la gramatica final(Buscar estructura).

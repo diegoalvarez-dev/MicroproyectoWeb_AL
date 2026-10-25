@@ -17,7 +17,6 @@ const ARROW_W = 5.5
 const LABEL_H = 24
 const SAMPLES = 26
 
-const num = (id) => (id === 'error' ? 1e9 : parseInt(id.slice(1), 10))
 const unit = (x, y) => {
   const d = Math.hypot(x, y) || 1
   return [x / d, y / d]
@@ -158,8 +157,55 @@ function placeLabels(edges, nodes, samples) {
   }
 }
 
+// Etiquetas, flecha inicial y rectángulo del dibujo (común a los dos modos de layout).
+function finish(edges, nodes, initial) {
+  const samples = edges.map((e) => Array.from({ length: SAMPLES }, (_, i) => e.at((i + 0.5) / SAMPLES)))
+  placeLabels(edges, nodes, samples)
+
+  // la flecha de estado inicial (en el editor puede faltar mientras no se marque)
+  const p = nodes[initial]
+  let initialArrow = null
+  if (p) {
+    const tip = [p.x - R - 3, p.y]
+    const ar = arrowAt(tip, [1, 0])
+    initialArrow = { line: `M${pt([p.x - R - 58, p.y])} L${pt(ar.base)}`, arrow: ar.points }
+  }
+
+  // rectángulo exacto que ocupa el dibujo
+  let x0 = Infinity
+  let y0 = Infinity
+  let x1 = -Infinity
+  let y1 = -Infinity
+  const grow = (x, y) => {
+    x0 = Math.min(x0, x)
+    y0 = Math.min(y0, y)
+    x1 = Math.max(x1, x)
+    y1 = Math.max(y1, y)
+  }
+  Object.values(nodes).forEach((n) => {
+    grow(n.x - R - 3, n.y - R - 3)
+    grow(n.x + R + 3, n.y + R + 3)
+  })
+  samples.forEach((list, i) => {
+    list.forEach(([x, y]) => grow(x, y))
+    grow(edges[i].tip[0], edges[i].tip[1])
+  })
+  edges.forEach((e) => {
+    grow(e.label.x - e.label.w / 2, e.label.y - e.label.h / 2)
+    grow(e.label.x + e.label.w / 2, e.label.y + e.label.h / 2)
+  })
+  if (p) grow(p.x - R - 60, p.y)
+  const PAD = 28
+  const bounds = { x: x0 - PAD, y: y0 - PAD, w: x1 - x0 + PAD * 2, h: y1 - y0 + PAD * 2 }
+
+  return { bounds, nodes, edges, initialArrow }
+}
+
 export function computeLayout(automaton) {
   const { states, transitions, initial, error } = automaton
+  // los estados pueden llamarse q0, A, BC, ABCD…: se ordenan por su posición en la lista
+  const order = Object.fromEntries(states.map((st, i) => [st.id, i]))
+  const num = (id) => order[id]
 
   // profundidad (BFS) desde el estado inicial, sin pasar por error
   const out = {}
@@ -244,40 +290,40 @@ export function computeLayout(automaton) {
     return linkEdge(g, a, b, bowK(a, b, 66 + 30 * (-diff - 1), 1)) // regreso: por abajo
   })
 
-  const samples = edges.map((e) => Array.from({ length: SAMPLES }, (_, i) => e.at((i + 0.5) / SAMPLES)))
-  placeLabels(edges, nodes, samples)
+  return finish(edges, nodes, initial)
+}
 
-  const p = nodes[initial]
-  const tip = [p.x - R - 3, p.y]
-  const ar = arrowAt(tip, [1, 0])
-  const initialArrow = { line: `M${pt([p.x - R - 58, p.y])} L${pt(ar.base)}`, arrow: ar.points }
-
-  // rectángulo exacto que ocupa el dibujo
-  let x0 = Infinity
-  let y0 = Infinity
-  let x1 = -Infinity
-  let y1 = -Infinity
-  const grow = (x, y) => {
-    x0 = Math.min(x0, x)
-    y0 = Math.min(y0, y)
-    x1 = Math.max(x1, x)
-    y1 = Math.max(y1, y)
+// Layout con posiciones dadas por el usuario (editor de dibujo y vista del AFND
+// registrado). `positions[id] = {x, y}`; el estado error, si falta, se coloca debajo.
+export function layoutWithPositions(automaton, positions) {
+  const { states, transitions, initial, error } = automaton
+  const nodes = {}
+  states.forEach((st) => {
+    if (positions[st.id]) nodes[st.id] = { x: positions[st.id].x, y: positions[st.id].y }
+  })
+  if (error && !nodes[error]) {
+    const real = states.filter((st) => st.id !== error && nodes[st.id])
+    const xs = real.map((st) => nodes[st.id].x)
+    const ys = real.map((st) => nodes[st.id].y)
+    nodes[error] = { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) + ERR_GAP }
   }
-  Object.values(nodes).forEach((n) => {
-    grow(n.x - R - 3, n.y - R - 3)
-    grow(n.x + R + 3, n.y + R + 3)
-  })
-  samples.forEach((list, i) => {
-    list.forEach(([x, y]) => grow(x, y))
-    grow(edges[i].tip[0], edges[i].tip[1])
-  })
-  edges.forEach((e) => {
-    grow(e.label.x - e.label.w / 2, e.label.y - e.label.h / 2)
-    grow(e.label.x + e.label.w / 2, e.label.y + e.label.h / 2)
-  })
-  grow(p.x - R - 60, p.y)
-  const PAD = 28
-  const bounds = { x: x0 - PAD, y: y0 - PAD, w: x1 - x0 + PAD * 2, h: y1 - y0 + PAD * 2 }
 
-  return { bounds, nodes, edges, initialArrow }
+  const groups = new Map()
+  for (const t of transitions) {
+    for (const to of t.to) {
+      const key = `${t.from}->${to}`
+      if (!groups.has(key)) groups.set(key, { key, from: t.from, to, symbols: [] })
+      groups.get(key).symbols.push(t.symbol)
+    }
+  }
+  const has = (a, b) => groups.has(`${a}->${b}`)
+  const edges = [...groups.values()].map((raw) => {
+    const g = { ...raw, text: raw.symbols.join(',') }
+    const a = nodes[g.from]
+    const b = nodes[g.to]
+    if (g.from === g.to) return loopEdge(g, a, g.from === error)
+    // si existe la flecha contraria, cada una se curva hacia su lado para no encimarse
+    return linkEdge(g, a, b, has(g.to, g.from) ? 0.2 : 0)
+  })
+  return finish(edges, nodes, initial)
 }
