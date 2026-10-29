@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import SpecBuilder from './SpecBuilder.jsx'
-import AutomatonCanvas from './AutomatonCanvas.jsx'
-import PanZoom from './PanZoom.jsx'
-import StepPlayer from './StepPlayer.jsx'
-import WordTester from './WordTester.jsx'
-import HistoryPanel from './HistoryPanel.jsx'
-import { api } from '../lib/api.js'
-import { computeLayout } from '../lib/layout.js'
-import { runHighlight } from '../lib/highlight.js'
-import { blankSpec, defaultSpec, specKey, toUi } from '../lib/spec.js'
-import { loadHistory, saveHistory } from '../lib/history.js'
+import AutomatonCanvas from '../../compartido/componentes/AutomatonCanvas.jsx'
+import PanZoom from '../../compartido/componentes/PanZoom.jsx'
+import StepPlayer from '../../compartido/componentes/StepPlayer.jsx'
+import WordTester from '../../compartido/componentes/WordTester.jsx'
+import HistoryPanel from '../../compartido/componentes/HistoryPanel.jsx'
+import { Segmented } from '../../compartido/componentes/ui.jsx'
+import GrammarPanel from './GrammarPanel.jsx'
+import PracticePanel from './PracticePanel.jsx'
+import { api } from './api.js'
+import { computeLayout } from '../../compartido/lib/layout.js'
+import { runHighlight } from '../../compartido/lib/highlight.js'
+import { blankSpec, defaultSpec, specKey, toUi } from '../../compartido/lib/spec.js'
+import { loadHistory, saveHistory } from '../../compartido/lib/history.js'
 
 const EMPTY_VALIDATION = {
   ok: false,
@@ -78,7 +81,9 @@ export default function DesignerModule() {
   const [built, setBuilt] = useState(null)
   const [idx, setIdx] = useState(0)
   const [playing, setPlaying] = useState(false)
-  const [speed, setSpeed] = useState(1)
+  const [speed, setSpeed] = useState(1) // velocidad de la creación del autómata
+  const [wordSpeed, setWordSpeed] = useState(1) // velocidad del recorrido de una palabra
+  const [view, setView] = useState('design') // 'design' | 'practice'
   const [run, setRun] = useState(null)
   const [busy, setBusy] = useState(null) // 'build' | 'generate' | 'word'
   const [netError, setNetError] = useState('')
@@ -130,13 +135,13 @@ export default function DesignerModule() {
   useEffect(() => {
     if (!run || run.finished) return
     const n = run.result.path.length
-    const delay = run.k === 0 ? 450 : 700 / speed
+    const delay = run.k === 0 ? 450 : 700 / wordSpeed
     const t = setTimeout(
       () => setRun((r) => (r && !r.finished ? (r.k < n ? { ...r, k: r.k + 1 } : { ...r, finished: true }) : r)),
       delay,
     )
     return () => clearTimeout(t)
-  }, [run, speed])
+  }, [run, wordSpeed])
 
   // si las indicaciones cambian, el recorrido anterior ya no corresponde
   useEffect(() => {
@@ -182,6 +187,7 @@ export default function DesignerModule() {
           automaton: r.automaton,
           steps: r.steps,
           text: r.text,
+          grammar: r.grammar,
           spec: useSpec,
           kind: useKind,
           key,
@@ -297,6 +303,23 @@ export default function DesignerModule() {
       </aside>
 
       <section className="min-w-0 space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Segmented
+            value={view}
+            onChange={setView}
+            label="Qué quieres hacer"
+            options={[
+              { value: 'design', label: 'Ver el autómata diseñado' },
+              { value: 'practice', label: 'Practicar: dibujar el mío' },
+            ]}
+          />
+          <p className="text-xs text-white/45">
+            {view === 'design'
+              ? 'El proyecto diseña el autómata a partir de las indicaciones.'
+              : 'Tú dibujas el autómata y el proyecto comprueba si cumple las indicaciones.'}
+          </p>
+        </div>
+
         <AnimatePresence>
           {netError && (
             <motion.div
@@ -311,94 +334,110 @@ export default function DesignerModule() {
           )}
         </AnimatePresence>
 
-        <div
-          className={
-            full
-              ? 'fixed inset-0 z-50 m-0! flex flex-col gap-3 overflow-y-auto bg-[#060919] p-4'
-              : 'glass overflow-hidden p-5'
-          }
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-bold">
-              {built ? (
-                <>
-                  <span className="grad-text">{built.kind}</span> diseñado
-                </>
-              ) : (
-                'Diagrama de transición'
+        {/* ------------------------- modo: ver el autómata diseñado ------------------------- */}
+        <div className={view === 'design' ? 'space-y-6' : 'hidden'}>
+          {/* La validación de palabras va ARRIBA, encima del diagrama, para ver el recorrido de inmediato. */}
+          {built && (
+            <WordTester
+              key={flash}
+              enabled={canTest}
+              stale={stale}
+              examples={validation.examples}
+              run={run}
+              onRun={handleRunWord}
+              onClear={() => setRun(null)}
+              busy={busy === 'word'}
+              speed={wordSpeed}
+              onSpeed={setWordSpeed}
+            />
+          )}
+
+          <div
+            className={
+              full
+                ? 'fixed inset-0 z-50 m-0! flex flex-col gap-3 overflow-y-auto bg-[#060919] p-4'
+                : 'glass overflow-hidden p-5'
+            }
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-bold">
+                {built ? (
+                  <>
+                    <span className="grad-text">{built.kind}</span> diseñado
+                  </>
+                ) : (
+                  'Diagrama de transición'
+                )}
+              </h2>
+              {built && (
+                <span className="text-xs text-white/45">
+                  {built.automaton.states.length} estados · Σ = {'{'}
+                  {built.automaton.alphabet.join(', ')}
+                  {'}'}
+                </span>
               )}
-            </h2>
-            {built && (
-              <span className="text-xs text-white/45">
-                {built.automaton.states.length} estados · Σ = {'{'}
-                {built.automaton.alphabet.join(', ')}
-                {'}'}
-              </span>
+            </div>
+
+            {built && layout ? (
+              <>
+                <PanZoom
+                  bounds={layout.bounds}
+                  resetKey={`${built.uid}-${full}`}
+                  expanded={full}
+                  onToggleExpand={() => setFull((v) => !v)}
+                  className={full ? 'min-h-0 flex-1' : 'h-[460px] sm:h-[560px]'}
+                >
+                  <AutomatonCanvas
+                    automaton={built.automaton}
+                    layout={layout}
+                    visible={visible}
+                    highlight={highlight}
+                    last={run ? null : visible.last}
+                  />
+                </PanZoom>
+                {built.automaton.note && (
+                  <p className="rounded-lg bg-amber-300/10 px-3 py-2 text-xs text-amber-100">{built.automaton.note}</p>
+                )}
+                <Legend />
+                <StepPlayer
+                  steps={built.steps}
+                  idx={idx}
+                  setIdx={setIdx}
+                  playing={playing}
+                  setPlaying={setPlaying}
+                  speed={speed}
+                  setSpeed={setSpeed}
+                />
+              </>
+            ) : (
+              <EmptyCanvas />
             )}
           </div>
 
-          {built && layout ? (
-            <>
-              <PanZoom
-                bounds={layout.bounds}
-                resetKey={`${built.uid}-${full}`}
-                expanded={full}
-                onToggleExpand={() => setFull((v) => !v)}
-                className={full ? 'min-h-0 flex-1' : 'h-[460px] sm:h-[560px]'}
-              >
-                <AutomatonCanvas
-                  automaton={built.automaton}
-                  layout={layout}
-                  visible={visible}
-                  highlight={highlight}
-                  last={run ? null : visible.last}
-                />
-              </PanZoom>
-              {built.automaton.note && (
-                <p className="rounded-lg bg-amber-300/10 px-3 py-2 text-xs text-amber-100">{built.automaton.note}</p>
-              )}
-              <Legend />
-              <StepPlayer
-                steps={built.steps}
-                idx={idx}
-                setIdx={setIdx}
-                playing={playing}
-                setPlaying={setPlaying}
-                speed={speed}
-                setSpeed={setSpeed}
-              />
-            </>
-          ) : (
-            <EmptyCanvas />
-          )}
+          {/* La gramática aparece al crear el autómata */}
+          {built && idx >= built.steps.length && <GrammarPanel grammar={built.grammar} />}
+
+          <HistoryPanel
+            items={history}
+            onLoad={loadFromHistory}
+            onDelete={(id) =>
+              setHistory((prev) => {
+                const next = prev.filter((h) => h.id !== id)
+                saveHistory(next)
+                return next
+              })
+            }
+            onClear={() => {
+              setHistory([])
+              saveHistory([])
+            }}
+          />
         </div>
 
-        <WordTester
-          key={flash}
-          enabled={canTest}
-          stale={stale}
-          examples={validation.examples}
-          run={run}
-          onRun={handleRunWord}
-          onClear={() => setRun(null)}
-          busy={busy === 'word'}
-        />
-
-        <HistoryPanel
-          items={history}
-          onLoad={loadFromHistory}
-          onDelete={(id) =>
-            setHistory((prev) => {
-              const next = prev.filter((h) => h.id !== id)
-              saveHistory(next)
-              return next
-            })
-          }
-          onClear={() => {
-            setHistory([])
-            saveHistory([])
-          }}
-        />
+        {/* ------------------------- modo: practicar ------------------------- */}
+        <div className={view === 'practice' ? '' : 'hidden'}>
+          <PracticePanel spec={spec} kind={kind} validation={validation} specOk={validation.ok && !validation.loading} />
+        </div>
       </section>
     </main>
   )

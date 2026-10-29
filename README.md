@@ -57,7 +57,6 @@ python tests/test_designer.py
 - Falta algunas indicaciones, por ejemplo que la suma total de VA sea "". Aca toca mirar que tenga coherencia ya que no puede existir una regla que diga que la suma de 2 sea 5 ya que eso es algo imposible.
 - La validacion de la palabra a ingresar se sugiere que aparezca en el automata ahi arriba y no en el cuadro de texto. o se puede colocar en la parte superior encima del canvas del automata para ver mejor en vez de abajo.
 - Debe mostrarse la gramatica final una vez se cree el automata finito(Buscar estructura)
-- Pueden existir varios estados terminales si el ejercicio lo requiere, no es necesario que solo sea uno pero si queda un solo estado y cumple mucho mejor.
 - Es recomendable que las reglas vayan separadas osea no se complementen.
 - Colocar velocidades para validar palabra.
 
@@ -65,3 +64,8 @@ python tests/test_designer.py
 - Es responsivo pero toca mejorarlo para que se vea un poco mejor en moviles.
 - Ajustar de que uno pueda digitar el estado ahi mismo y no por medio del formulario
 - Agregar como queda la gramatica final(Buscar estructura).
+
+## Modulo 3(Por mejorar)
+-Las fusiones ya que cuando se representa el AFDM no se aprecia bien los nuevos estados y los que desaparecen
+-La tabla de transcion para el AFDM, mirar si ya la tenemos implementada
+-Salir de dudas con respecto a la marcacion en los estados finales dentro de la minimizacion, si se marca el cuador que une a dos estados finales.

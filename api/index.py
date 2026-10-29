@@ -14,11 +14,14 @@ if str(ROOT) not in sys.path:
 from fastapi import APIRouter, FastAPI  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
-from backend import converter  # noqa: E402
-from backend.designer import build, check_word  # noqa: E402
-from backend.generator import LEVELS, generate_spec  # noqa: E402
-from backend.rules import spec_sentences  # noqa: E402
-from backend.validators import normalize_spec, sample_words, validate_spec  # noqa: E402
+from backend.conversion import converter  # noqa: E402
+from backend.minimizacion.router import router as minimizacion_router  # noqa: E402
+from backend.compartido.grammar import grammar_from_automaton  # noqa: E402
+from backend.diseno import practice  # noqa: E402
+from backend.diseno.designer import build, check_word  # noqa: E402
+from backend.diseno.generator import LEVELS, generate_spec  # noqa: E402
+from backend.diseno.rules import spec_sentences  # noqa: E402
+from backend.diseno.validators import normalize_spec, sample_words, validate_spec  # noqa: E402
 
 
 class RuleIn(BaseModel):
@@ -35,12 +38,19 @@ class LengthIn(BaseModel):
     max: Optional[int] = None
 
 
+class CountIn(BaseModel):
+    symbol: str = ""
+    min: Optional[int] = None  # mínimo de veces que aparece el símbolo en la palabra
+    max: Optional[int] = None  # máximo de veces que aparece el símbolo en la palabra
+
+
 class SpecIn(BaseModel):
     alphabet: List[str] = []
     start: str = ""
     end: str = ""
     rules: List[RuleIn] = []
     length: Optional[LengthIn] = None  # longitud total de la palabra
+    counts: List[CountIn] = []  # suma total de símbolos
 
 
 class SpecBody(BaseModel):
@@ -68,6 +78,14 @@ class NfaBody(BaseModel):
 
 
 class NfaWordBody(NfaBody):
+    word: str = ""
+
+
+class PracticeBody(BuildBody):
+    nfa: NfaIn  # el autómata que dibujó el estudiante
+
+
+class PracticeWordBody(PracticeBody):
     word: str = ""
 
 
@@ -106,7 +124,13 @@ def designer_build(body: BuildBody):
     if not result["ok"]:
         return {**result, "automaton": None, "steps": []}
     automaton, steps = build(spec, body.kind)
-    return {**result, "text": spec_sentences(spec), "automaton": automaton, "steps": steps}
+    return {
+        **result,
+        "text": spec_sentences(spec),
+        "automaton": automaton,
+        "steps": steps,
+        "grammar": grammar_from_automaton(automaton),
+    }
 
 
 @router.post("/designer/check-word")
@@ -115,6 +139,22 @@ def designer_check_word(body: WordBody):
     if not result["ok"]:
         return {"ok": False, "errors": result["errors"]}
     return {"ok": True, **check_word(spec, body.kind, body.word.strip())}
+
+
+@router.post("/designer/practice/check")
+def designer_practice_check(body: PracticeBody):
+    spec, result = _validated(body)
+    if not result["ok"]:
+        return {"ok": False, "errors": result["errors"]}
+    return practice.check_student(spec, body.kind, body.nfa.model_dump())
+
+
+@router.post("/designer/practice/word")
+def designer_practice_word(body: PracticeWordBody):
+    spec, result = _validated(body)
+    if not result["ok"]:
+        return {"ok": False, "errors": result["errors"]}
+    return practice.student_word(spec, body.kind, body.nfa.model_dump(), body.word.strip())
 
 
 @router.post("/designer/generate")
@@ -182,3 +222,4 @@ def converter_generate(body: GenerateBody):
 
 
 app.include_router(router)
+app.include_router(minimizacion_router)  # módulo 3: /api/minimizer/*

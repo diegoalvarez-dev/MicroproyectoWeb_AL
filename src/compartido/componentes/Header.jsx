@@ -5,7 +5,7 @@ const TEAM = ['Diego Márquez', 'Juan Quintero', 'Diego Álvarez']
 const MODULES = [
   { id: 1, title: 'Diseño de autómatas', sub: 'AFD · AFND', ready: true },
   { id: 2, title: 'AFND → AFD', sub: 'Construcción de subconjuntos', ready: true },
-  { id: 3, title: 'Minimización', sub: 'Próximamente', ready: false },
+  { id: 3, title: 'Minimización', sub: 'Pares distinguibles', ready: true },
 ]
 
 function Logo() {

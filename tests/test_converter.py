@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend.converter import (  # noqa: E402
+from backend.conversion.converter import (  # noqa: E402
     LEVELS,
     MAX_DFA_STATES,
     MAX_NFA_STATES,
@@ -24,7 +24,7 @@ from backend.converter import (  # noqa: E402
     subset_construction,
     validate_nfa,
 )
-from backend.designer import run_word  # noqa: E402
+from backend.diseno.designer import run_word  # noqa: E402
 
 # El ejemplo del enunciado del equipo
 EXAMPLE = normalize_nfa(

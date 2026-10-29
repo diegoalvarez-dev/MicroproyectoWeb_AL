@@ -1,5 +1,6 @@
-import { toApi } from './spec.js'
-import { nfaToApi } from './nfa.js'
+// Llamadas al backend del módulo 1 (rutas /api/designer/*).
+import { toApi } from '../../compartido/lib/spec.js'
+import { nfaToApi } from '../../compartido/lib/nfa.js'
 
 async function post(path, body) {
   const res = await fetch(`/api${path}`, {
@@ -18,11 +19,9 @@ export const api = {
   checkWord: (spec, kind, word) => post('/designer/check-word', { spec: toApi(spec), kind, word }),
   generate: (level, alphabetKind) =>
     post('/designer/generate', { level, alphabet_kind: alphabetKind }),
-
-  // Módulo 2: AFND → AFD (`nfa` es el modelo de la interfaz)
-  nfaValidate: (nfa) => post('/converter/validate', { nfa: nfaToApi(nfa) }),
-  nfaConvert: (nfa) => post('/converter/convert', { nfa: nfaToApi(nfa) }),
-  nfaCheckWord: (nfa, word) => post('/converter/check-word', { nfa: nfaToApi(nfa), word }),
-  nfaGenerate: (level, alphabetKind) =>
-    post('/converter/generate', { level, alphabet_kind: alphabetKind }),
+  // Práctica: el estudiante dibuja su autómata y el backend lo compara con las indicaciones.
+  practiceCheck: (spec, kind, nfa) =>
+    post('/designer/practice/check', { spec: toApi(spec), kind, nfa: nfaToApi(nfa) }),
+  practiceWord: (spec, kind, nfa, word) =>
+    post('/designer/practice/word', { spec: toApi(spec), kind, nfa: nfaToApi(nfa), word }),
 }

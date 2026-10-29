@@ -19,7 +19,7 @@ Cada construcción devuelve también la lista de `steps` que el frontend anima.
 """
 from __future__ import annotations
 
-from .automata import (
+from ..compartido.automata import (
     ERROR_ID,
     bfs_order,
     bisimulation_partition,
@@ -30,6 +30,7 @@ from .rules import (
     DEAD,
     START,
     check_word_direct,
+    count_rules,
     length_bounds,
     monitor_accepting,
     monitor_next,
@@ -54,11 +55,11 @@ def _meaning(spec, rules, members):
     monitors = [m for m in members if isinstance(m, tuple)]
     if len(monitors) != 1:
         syms = []
-        for p, _, _ in monitors:
-            if p not in syms:
-                syms.append(p)
+        for mon in monitors:
+            if mon[0] not in syms:
+                syms.append(mon[0])
         return "se llega aquí después de leer " + " o ".join(syms) + " (comportamiento idéntico)"
-    p, r, pos = monitors[0]
+    p, r, pos, cnts = monitors[0]
     text = f"se llega aquí después de leer {p}"
     lo, hi = run_bounds(rules.get(p, {}))
     if hi is None and lo > 1:
@@ -71,6 +72,12 @@ def _meaning(spec, rules, members):
             text += f"; la palabra ya tiene al menos {pos} símbolos"
         else:
             text += f"; la palabra lleva {pos} símbolos"
+    for c, n in zip(count_rules(spec), cnts):
+        sym, lo, hi = c["symbol"], c.get("min") or 0, c.get("max")
+        if hi is None and n >= lo:
+            text += f"; ya hay al menos {n} {sym} en total"
+        else:
+            text += f"; lleva {n} {sym} en total"
     return text
 
 
@@ -218,7 +225,11 @@ def build_dfa(spec):
         else:
             text = _meaning(spec, rules, ms)
             if b in acc_blocks:
-                text += f"; puede terminar aquí porque el último símbolo es {spec['end']} y ya se cumple todo lo pedido"
+                text += (
+                    f"; puede terminar aquí porque el último símbolo es {spec['end']} y ya se cumple todo lo pedido"
+                    if spec.get("end")
+                    else "; puede terminar aquí porque ya se cumple todo lo pedido"
+                )
             meaning[b] = text
     return _assemble("AFD", spec, order_b, error_b, bdelta, acc_blocks, reasons, meaning)
 

@@ -4,9 +4,10 @@ Una especificación (spec) es un dict:
 
     {
       "alphabet": ["0", "1", "2"],
-      "start": "0",              # toda palabra inicia en este símbolo
-      "end": "0",                # toda palabra finaliza en este símbolo
+      "start": "0",              # toda palabra inicia en este símbolo ("" = sin indicar)
+      "end": "0",                # toda palabra finaliza en este símbolo ("" = sin indicar)
       "length": {"min": 3, "max": 8},     # longitud de la palabra (o None)
+      "counts": [{"symbol": "1", "min": 2, "max": 2}],   # suma total de un símbolo en la palabra
       "rules": [
         {"symbol": "1", "mode": "allow", "min_run": None, "max_run": 3,
          "before": None, "after": None},
@@ -25,11 +26,13 @@ Interpretación:
     Un bloque al inicio de la palabra no tiene predecesor, y uno al final no
     tiene sucesor, por lo que incumplen la condición correspondiente.
   * length.min / length.max: cantidad total de símbolos de la palabra.
+  * counts: la suma total de veces que aparece un símbolo en la palabra debe
+    estar entre min y max (None = sin ese límite).
   * La palabra vacía nunca es válida.
 
 Hay dos implementaciones independientes para poder verificarse mutuamente:
   * `monitor_next`: un autómata "monitor" cuyo estado es (último símbolo,
-    largo de la subcadena actual, largo de la palabra), con topes.
+    largo de la subcadena actual, largo de la palabra, totales por símbolo), con topes.
   * `check_word_direct`: revisión directa por bloques de símbolos iguales.
 """
 from __future__ import annotations
@@ -62,6 +65,38 @@ def length_bounds(spec):
     return length.get("min"), length.get("max")
 
 
+def count_rules(spec):
+    return spec.get("counts") or []
+
+
+def count_cap(c):
+    """Hasta cuánto hay que contar un símbolo (más allá ya da igual)."""
+    return c["max"] if c.get("max") is not None else (c.get("min") or 0)
+
+
+def init_counts(spec):
+    return tuple(0 for _ in count_rules(spec))
+
+
+def bump_counts(spec, cnts, sym):
+    """Suma un `sym` a los totales. Devuelve (nuevos totales, regla que se pasó de su máximo | None)."""
+    out = list(cnts)
+    for i, c in enumerate(count_rules(spec)):
+        if c["symbol"] != sym:
+            continue
+        n = out[i] + 1
+        if c.get("max") is not None and n > c["max"]:
+            return None, c
+        out[i] = min(n, count_cap(c))
+    return tuple(out), None
+
+
+def _count_over_text(c):
+    if c["max"] == 0:
+        return f"El símbolo {c['symbol']} no puede aparecer en la palabra."
+    return f"El total de {c['symbol']} en la palabra no puede pasar de {c['max']}."
+
+
 def pos_cap(spec):
     """Hasta cuánto hay que contar la longitud de la palabra (0 = no se cuenta)."""
     mn, mx = length_bounds(spec)
@@ -74,21 +109,28 @@ def monitor_next(spec, rules, m, c):
     """Transición del monitor. Devuelve (estado_siguiente, explicación)."""
     if m == DEAD:
         return DEAD, "Una vez en error la palabra ya no puede ser válida: rizo con todo el alfabeto."
-    start = spec["start"]
+    start = spec.get("start") or None
     _, mx = length_bounds(spec)
     cap = pos_cap(spec)
     rc = rules.get(c, {})
     if m == START:
-        if c != start:
+        if start and c != start:
             return DEAD, f"La palabra debe iniciar en {start}, no en {c}."
         if rc.get("before"):
             return DEAD, f"{c} debe ir precedido de {rc['before']}, no puede ser el primer símbolo."
-        return (c, 1, min(1, cap)), f"La palabra inicia en {c}."
-    p, r, pos = m
+        cnts, over = bump_counts(spec, init_counts(spec), c)
+        if over:
+            return DEAD, _count_over_text(over)
+        why = f"La palabra inicia en {c}." if start else f"Se lee {c}, el primer símbolo de la palabra."
+        return (c, 1, min(1, cap), cnts), why
+    p, r, pos, cnts = m
     rp = rules.get(p, {})
     if mx is not None and pos >= mx:
         return DEAD, f"La palabra no puede tener más de {mx} símbolos."
     npos = min(pos + 1, cap)
+    ncnts, over = bump_counts(spec, cnts, c)
+    if over:
+        return DEAD, _count_over_text(over)
     lo_p, hi_p = run_bounds(rp)
     if c == p:
         nr = r + 1
@@ -96,23 +138,25 @@ def monitor_next(spec, rules, m, c):
             if hi_p == 1:
                 return DEAD, f"No pueden existir subcadenas consecutivas de {c}."
             return DEAD, f"Las subcadenas de {c} no pueden tener más de {hi_p} símbolos."
-        return (p, min(nr, run_cap(rp)), npos), f"Rizo: se permiten subcadenas consecutivas de {c}."
+        return (p, min(nr, run_cap(rp)), npos, ncnts), f"Rizo: se permiten subcadenas consecutivas de {c}."
     if r < lo_p:
         return DEAD, f"Las subcadenas de {p} deben tener al menos {lo_p} símbolos antes de leer {c}."
     if rp.get("after") and c != rp["after"]:
         return DEAD, f"Las subcadenas de {p} deben ir seguidas de {rp['after']}, no de {c}."
     if rc.get("before") and p != rc["before"]:
         return DEAD, f"Las subcadenas de {c} deben ir precedidas de {rc['before']}, no de {p}."
-    return (c, 1, npos), f"Se lee {c} después de {p}."
+    return (c, 1, npos, ncnts), f"Se lee {c} después de {p}."
 
 
 def monitor_accepting(spec, rules, m):
-    """La palabra puede terminar aquí si el último símbolo es `end`, su
-    subcadena cumple el mínimo, no exige nada después y la longitud alcanza."""
+    """La palabra puede terminar aquí si el último símbolo es `end` (si se pidió),
+    su subcadena cumple el mínimo, no exige nada después, la longitud alcanza y
+    los totales de símbolos llegaron a su mínimo."""
     if m in (START, DEAD):
         return False
-    p, r, pos = m
-    if p != spec["end"]:
+    p, r, pos, cnts = m
+    end = spec.get("end") or None
+    if end and p != end:
         return False
     rp = rules.get(p, {})
     if rp.get("after"):
@@ -123,6 +167,9 @@ def monitor_accepting(spec, rules, m):
     mn, _ = length_bounds(spec)
     if mn is not None and pos < mn:
         return False
+    for c, n in zip(count_rules(spec), cnts):
+        if n < (c.get("min") or 0):
+            return False
     return True
 
 
@@ -149,22 +196,41 @@ def check_word_direct(spec, word):
     detecta la primera violación (len(word) si se detecta al terminar).
     """
     rules = rules_by_symbol(spec)
-    start, end = spec["start"], spec["end"]
+    start, end = spec.get("start") or None, spec.get("end") or None
     mn, mx = length_bounds(spec)
     n = len(word)
     if n == 0:
-        return {
-            "valid": False,
-            "reason": f"La palabra vacía no es válida: toda palabra inicia en {start} y finaliza en {end}.",
-            "index": 0,
-        }
+        if start and end:
+            why = f"toda palabra inicia en {start} y finaliza en {end}"
+        else:
+            why = "toda palabra tiene al menos un símbolo"
+        return {"valid": False, "reason": f"La palabra vacía no es válida: {why}.", "index": 0}
     violations = []  # (índice, mensaje)
-    if word[0] != start:
+    if start and word[0] != start:
         violations.append((0, f"La palabra debe iniciar en {start}, pero inicia en {word[0]}."))
     if mx is not None and n > mx:
         violations.append((mx, f"La palabra no puede tener más de {mx} símbolos (tiene {n})."))
     if mn is not None and n < mn:
         violations.append((n, f"La palabra debe tener al menos {mn} símbolos (tiene {n})."))
+    for c in count_rules(spec):
+        s_, lo_c, hi_c = c["symbol"], c.get("min"), c.get("max")
+        k = word.count(s_)
+        exact = lo_c is not None and lo_c == hi_c
+        if hi_c is not None and k > hi_c:
+            where = [i for i, ch in enumerate(word) if ch == s_][hi_c]
+            msg = (
+                f"La palabra debe tener exactamente {hi_c} símbolos {s_} en total (tiene {k})."
+                if exact
+                else f"El total de {s_} no puede pasar de {hi_c} (la palabra tiene {k})."
+            )
+            violations.append((where, msg))
+        if lo_c and k < lo_c:
+            msg = (
+                f"La palabra debe tener exactamente {lo_c} símbolos {s_} en total (tiene {k})."
+                if exact
+                else f"La palabra debe tener al menos {lo_c} símbolos {s_} en total (tiene {k})."
+            )
+            violations.append((n, msg))
     i = 0
     while i < n:
         s = word[i]
@@ -201,7 +267,7 @@ def check_word_direct(spec, word):
                 else:
                     violations.append((j + 1, f"Las subcadenas de {s} deben ir seguidas de {a}, no de {nxt}."))
         i = j + 1
-    if word[-1] != end:
+    if end and word[-1] != end:
         violations.append((n, f"La palabra debe finalizar en {end}, pero finaliza en {word[-1]}."))
     if not violations:
         return {"valid": True, "reason": "La palabra cumple todas las indicaciones.", "index": None}
@@ -221,40 +287,48 @@ def _length_sentence(mn, mx):
     return f"La palabra debe tener como máximo {mx} símbolos."
 
 
-def _run_phrase(lo, hi):
-    if lo and hi:
-        return f"de exactamente {lo} símbolos" if lo == hi else f"de entre {lo} y {hi} símbolos"
-    if hi:
-        return "de un solo símbolo" if hi == 1 else f"de máximo {hi} símbolos"
+def _count_sentence(c):
+    s, lo, hi = c["symbol"], c.get("min"), c.get("max")
+    if lo is not None and lo == hi:
+        return f"La suma total de {s} en la palabra es exactamente {lo}."
+    if lo and hi is not None:
+        return f"La suma total de {s} en la palabra está entre {lo} y {hi}."
     if lo:
-        return f"de mínimo {lo} símbolos"
-    return ""
+        return f"La suma total de {s} en la palabra es de al menos {lo}."
+    if hi == 0:
+        return f"El símbolo {s} no puede aparecer en la palabra."
+    return f"La suma total de {s} en la palabra es de como máximo {hi}."
 
 
 def spec_sentences(spec):
-    """Las indicaciones en lenguaje natural (una frase por regla)."""
-    out = [
-        f"Σ = {{{', '.join(spec['alphabet'])}}}.",
-        f"Toda palabra inicia en {spec['start']} y finaliza en {spec['end']}.",
-    ]
+    """Las indicaciones en lenguaje natural: una frase por cada condición (van separadas)."""
+    out = [f"Σ = {{{', '.join(spec['alphabet'])}}}."]
+    start, end = spec.get("start") or None, spec.get("end") or None
+    if start and end:
+        out.append(f"Toda palabra inicia en {start} y finaliza en {end}.")
+    elif start:
+        out.append(f"Toda palabra inicia en {start}.")
+    elif end:
+        out.append(f"Toda palabra finaliza en {end}.")
     mn, mx = length_bounds(spec)
     if mn is not None or mx is not None:
         out.append(_length_sentence(mn, mx))
+    for c in count_rules(spec):
+        out.append(_count_sentence(c))
     for r in spec.get("rules", []):
         s = r["symbol"]
         if r.get("mode") == "forbid":
             out.append(f"No pueden existir subcadenas consecutivas de {s}.")
             continue
-        text = f"Pueden existir subcadenas consecutivas de {s}"
-        run = _run_phrase(r.get("min_run"), r.get("max_run"))
-        if run:
-            text += ", " + run
-        conds = []
+        base = f"Pueden existir subcadenas consecutivas de {s}"
+        lines = []
+        if r.get("min_run"):
+            lines.append(f"{base} con una longitud mínima de {r['min_run']} símbolos.")
+        if r.get("max_run"):
+            lines.append(f"{base} con una longitud máxima de {r['max_run']} símbolos.")
         if r.get("before"):
-            conds.append(f"precedidas de al menos un {r['before']}")
+            lines.append(f"{base} precedidas de {r['before']}.")
         if r.get("after"):
-            conds.append(f"seguidas de un {r['after']}")
-        if conds:
-            text += ", siempre y cuando vayan " + " y ".join(conds)
-        out.append(text + ".")
+            lines.append(f"{base} seguidas de {r['after']}.")
+        out.extend(lines or [base + "."])
     return out

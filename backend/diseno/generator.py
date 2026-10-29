@@ -9,11 +9,11 @@ from .validators import DIGITS, LETTERS, MAX_STATES, automaton_size, validate_sp
 LEVELS = ("facil", "medio", "dificil")
 
 # n: tamaños de alfabeto · rules: cuántas reglas · states: rango de estados del AFD
-# length_p / run_p: probabilidad de pedir longitud de la palabra / de las subcadenas
+# length_p / count_p: probabilidad de pedir la longitud de la palabra / la suma total de un símbolo
 CONFIG = {
-    "facil": {"n": [2], "rules": (0, 1), "states": (3, 9), "length_p": 0.4},
-    "medio": {"n": [3], "rules": (1, 2), "states": (4, 16), "length_p": 0.5},
-    "dificil": {"n": [3, 4], "rules": (2, 3), "states": (6, 26), "length_p": 0.7},
+    "facil": {"n": [2], "rules": (0, 1), "states": (3, 9), "length_p": 0.4, "count_p": 0.0},
+    "medio": {"n": [3], "rules": (1, 2), "states": (4, 16), "length_p": 0.5, "count_p": 0.2},
+    "dificil": {"n": [3, 4], "rules": (2, 3), "states": (6, 26), "length_p": 0.7, "count_p": 0.4},
 }
 
 
@@ -65,6 +65,18 @@ def _make_length(rng, level):
     return {"min": lo, "max": hi}
 
 
+def _make_count(rng, level, alphabet):
+    """Una indicación de «suma total de un símbolo»."""
+    symbol = rng.choice(alphabet)
+    kind = rng.choice(["exact", "max", "min"]) if level == "dificil" else rng.choice(["max", "min"])
+    n = rng.randint(1, 3)
+    if kind == "exact":
+        return {"symbol": symbol, "min": n, "max": n}
+    if kind == "max":
+        return {"symbol": symbol, "min": None, "max": n + 1}
+    return {"symbol": symbol, "min": n, "max": None}
+
+
 def generate_spec(level="facil", alphabet_kind="random", rng=None):
     if level not in LEVELS:
         raise ValueError(f"Nivel desconocido: {level}")
@@ -84,18 +96,21 @@ def generate_spec(level="facil", alphabet_kind="random", rng=None):
             for i, s in enumerate(symbols)
         ]
         length = _make_length(rng, level) if rng.random() < cfg["length_p"] else None
+        counts = [_make_count(rng, level, alphabet)] if rng.random() < cfg["count_p"] else []
         spec = {
             "alphabet": alphabet,
             "start": rng.choice(alphabet),
             "end": rng.choice(alphabet),
             "rules": rules,
             "length": length,
+            "counts": counts,
         }
         if not validate_spec(spec, check_size=False)["ok"]:
             continue
         # el ejercicio debe tener al menos una restricción real
         restrictive = (
             length is not None
+            or bool(counts)
             or any(r["mode"] == "forbid" or r["before"] or r["after"] or r["min_run"] or r["max_run"] for r in rules)
         )
         if level != "facil" and not restrictive:
@@ -110,4 +125,4 @@ def generate_spec(level="facil", alphabet_kind="random", rng=None):
     if fallback is not None:
         return fallback
     a = list(DIGITS[:2])
-    return {"alphabet": a, "start": a[0], "end": a[0], "rules": [], "length": None}
+    return {"alphabet": a, "start": a[0], "end": a[0], "rules": [], "length": None, "counts": []}

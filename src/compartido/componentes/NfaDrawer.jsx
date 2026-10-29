@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useId, useMemo, useRef, useState } from 'react'
 import { R, layoutWithPositions } from '../lib/layout.js'
 import {
   CANVAS,
@@ -52,6 +52,7 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
  */
 export default function NfaDrawer({ nfa, onChange }) {
   const svgRef = useRef(null)
+  const gridId = `grid-${useId().replace(/:/g, '')}` // id único: hay varios dibujos montados a la vez
   const drag = useRef(null)
   const [tool, setToolRaw] = useState(nfa.states.length ? 'move' : 'state')
   const [pending, setPending] = useState(null) // estado de origen de una flecha en curso
@@ -330,11 +331,11 @@ export default function NfaDrawer({ nfa, onChange }) {
           onPointerCancel={onUp}
         >
           <defs>
-            <pattern id="drawer-grid" width="30" height="30" patternUnits="userSpaceOnUse">
+            <pattern id={gridId} width="30" height="30" patternUnits="userSpaceOnUse">
               <circle cx="1.5" cy="1.5" r="1.1" fill="rgba(255,255,255,.1)" />
             </pattern>
           </defs>
-          <rect data-testid="drawer-bg" width={CANVAS.w} height={CANVAS.h} fill="url(#drawer-grid)" onPointerDown={onBackgroundDown} />
+          <rect data-testid="drawer-bg" width={CANVAS.w} height={CANVAS.h} fill={`url(#${gridId})`} onPointerDown={onBackgroundDown} />
 
           {!nfa.states.length && (
             <text x={CANVAS.w / 2} y={CANVAS.h / 2} textAnchor="middle" fill="rgba(255,255,255,.4)" fontSize="18" pointerEvents="none">

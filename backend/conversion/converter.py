@@ -29,9 +29,9 @@ import random
 import string
 from itertools import product
 
-from .automata import ERROR_ID
-from .designer import run_word
-from .validators import DIGITS, LETTERS
+from ..compartido.automata import ERROR_ID
+from ..diseno.designer import run_word
+from ..diseno.validators import DIGITS, LETTERS
 
 MIN_SYMBOLS, MAX_SYMBOLS = 2, 4
 MIN_STATES, MAX_NFA_STATES = 2, 12

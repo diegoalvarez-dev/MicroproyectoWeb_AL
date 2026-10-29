@@ -10,10 +10,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend.designer import build, check_word, run_word  # noqa: E402
-from backend.generator import LEVELS, generate_spec  # noqa: E402
-from backend.rules import check_word_direct, spec_sentences  # noqa: E402
-from backend.validators import MAX_STATES, normalize_spec, sample_words, validate_spec  # noqa: E402
+from backend.compartido.grammar import EPSILON, grammar_from_automaton  # noqa: E402
+from backend.diseno import practice  # noqa: E402
+from backend.diseno.designer import build, check_word, run_word  # noqa: E402
+from backend.diseno.generator import LEVELS, generate_spec  # noqa: E402
+from backend.diseno.rules import check_word_direct, spec_sentences  # noqa: E402
+from backend.diseno.validators import MAX_STATES, normalize_spec, sample_words, validate_spec  # noqa: E402
 
 EXAMPLE = {
     "alphabet": ["0", "1"],
@@ -128,7 +130,7 @@ def test_run_length():
     assert check_word(spec, "AFD", "011001110")["valid"]
     assert not check_word(spec, "AFD", "0110010")["valid"]
     text = " ".join(spec_sentences(spec))
-    assert "de entre 2 y 3 símbolos" in text
+    assert "longitud mínima de 2 símbolos" in text and "longitud máxima de 3 símbolos" in text
     only_max = mk(rules=[{"symbol": "1", "mode": "allow", "max_run": 2}])
     assert check_word(only_max, "AFD", "0110")["valid"] and not check_word(only_max, "AFD", "01110")["valid"]
     # los 0 del medio no tienen límite aunque el 1 sí lo tenga
@@ -156,7 +158,8 @@ def test_validation_rules():
     assert not validate_spec(mk(start="9"))["ok"]
     bad_start = {**EXAMPLE_3, "rules": [{"symbol": "0", "mode": "allow", "before": "1", "after": None}]}
     assert not validate_spec(normalize_spec(bad_start))["ok"]
-    assert not validate_spec(mk(rules=EXAMPLE["rules"] * 2))["ok"]
+    assert validate_spec(mk(rules=EXAMPLE["rules"] * 2))["ok"]  # la misma regla dos veces se une en una
+    assert not validate_spec(mk(rules=[{"symbol": "1", "mode": "allow"}, {"symbol": "1", "mode": "forbid"}]))["ok"]
     ok = mk(
         rules=[
             {"symbol": "1", "mode": "allow", "before": "0", "after": "0"},
@@ -223,8 +226,24 @@ def random_spec(rng):
         if lo is not None and hi is not None and lo > hi:
             lo, hi = hi, lo
         length = {"min": lo, "max": hi}
+    counts = []
+    if rng.random() < 0.4:
+        sym = rng.choice(alphabet)
+        lo = rng.choice([None, 1, 2])
+        hi = rng.choice([None, 2, 3])
+        if lo is not None and hi is not None and lo > hi:
+            lo, hi = hi, lo
+        if lo is not None or hi is not None:
+            counts.append({"symbol": sym, "min": lo, "max": hi})
     return normalize_spec(
-        {"alphabet": alphabet, "start": rng.choice(alphabet), "end": rng.choice(alphabet), "rules": rules, "length": length}
+        {
+            "alphabet": alphabet,
+            "start": rng.choice(alphabet + [""]),
+            "end": rng.choice(alphabet + [""]),
+            "rules": rules,
+            "length": length,
+            "counts": counts,
+        }
     )
 
 
@@ -277,7 +296,7 @@ def check_spec_exhaustively(spec, rng):
 def test_random_specs_exhaustive():
     rng = random.Random(7)
     checked = 0
-    while checked < 100:
+    while checked < 150:
         spec = random_spec(rng)
         if not validate_spec(spec)["ok"]:
             continue
@@ -295,6 +314,199 @@ def test_generator_levels():
                 assert res["ok"], (level, spec, res)
                 assert max(len(build(spec, k)[0]["states"]) for k in ("AFD", "AFND")) <= MAX_STATES
                 check_spec_exhaustively(spec, rng)
+
+
+# ---------------------------------------------------------------------------
+# módulo 1 (mejoras): suma total, reglas separadas, inicio/fin opcionales
+# ---------------------------------------------------------------------------
+def test_total_count():
+    spec = mk(counts=[{"symbol": "1", "min": 2, "max": 2}])
+    assert validate_spec(spec)["ok"]
+    for kind in ("AFD", "AFND"):
+        assert check_word(spec, kind, "0110")["valid"]
+        assert check_word(spec, kind, "01010")["valid"]
+        assert not check_word(spec, kind, "010")["valid"]  # un solo 1
+        assert not check_word(spec, kind, "011010")["valid"]  # tres 1
+    assert "exactamente 2" in " ".join(spec_sentences(spec))
+    at_least = mk(counts=[{"symbol": "1", "min": 3, "max": None}])
+    assert check_word(at_least, "AFD", "0111110")["valid"] and not check_word(at_least, "AFD", "01010")["valid"]
+    at_most = mk(counts=[{"symbol": "1", "min": None, "max": 1}])
+    assert check_word(at_most, "AFND", "000")["valid"] and not check_word(at_most, "AFND", "0110")["valid"]
+    assert "como máximo 1" in " ".join(spec_sentences(at_most))
+
+
+def test_total_count_coherence():
+    # la suma de 1 no puede ser 5 si la palabra mide como máximo 4
+    bad = mk(length={"min": None, "max": 4}, counts=[{"symbol": "1", "min": 5, "max": 5}])
+    res = validate_spec(bad)
+    assert not res["ok"] and "no es coherente" in res["errors"][0].lower()
+    # los mínimos de todos los símbolos no caben en la longitud máxima
+    both = mk(length={"min": None, "max": 5}, counts=[{"symbol": "0", "min": 3, "max": None}, {"symbol": "1", "min": 3, "max": None}])
+    assert not validate_spec(both)["ok"]
+    # entre todos los símbolos no alcanzan para la longitud mínima
+    short = mk(length={"min": 9, "max": None}, counts=[{"symbol": "0", "min": None, "max": 2}, {"symbol": "1", "min": None, "max": 2}])
+    assert not validate_spec(short)["ok"]
+    # la palabra inicia en 0 pero se pide que 0 aparezca 0 veces
+    assert not validate_spec(mk(counts=[{"symbol": "0", "min": None, "max": 0}]))["ok"]
+    assert not validate_spec(mk(counts=[{"symbol": "1", "min": 4, "max": 2}]))["ok"]
+    assert not validate_spec(mk(counts=[{"symbol": "1", "min": 1, "max": 1}, {"symbol": "1", "min": 2, "max": 2}]))["ok"]
+    assert not validate_spec(mk(counts=[{"symbol": "9", "min": 1, "max": 1}]))["ok"]
+    assert not validate_spec(mk(counts=[{"symbol": "1", "min": 99, "max": None}]))["ok"]
+    # contradicción más general: 11 prohibido pero hace falta tener tres 1 seguidos en una palabra de 3
+    assert not validate_spec(mk(start="1", end="1", length={"min": None, "max": 3}, counts=[{"symbol": "1", "min": 3, "max": 3}], rules=[{"symbol": "1", "mode": "forbid"}]))["ok"]
+
+
+def test_separate_rules_merge():
+    # cada fila es una sola condición; las filas del mismo símbolo se combinan
+    rows = [
+        {"symbol": "1", "mode": "allow", "before": "0"},
+        {"symbol": "1", "mode": "allow", "after": "0"},
+        {"symbol": "1", "mode": "allow", "max_run": 3},
+    ]
+    merged = mk(rules=rows)
+    together = mk(rules=[{"symbol": "1", "mode": "allow", "before": "0", "after": "0", "max_run": 3}])
+    assert merged["rules"] == together["rules"]
+    sentences = spec_sentences(merged)
+    assert "Pueden existir subcadenas consecutivas de 1 precedidas de 0." in sentences
+    assert "Pueden existir subcadenas consecutivas de 1 seguidas de 0." in sentences
+    assert "Pueden existir subcadenas consecutivas de 1 con una longitud máxima de 3 símbolos." in sentences
+    # dos condiciones que se contradicen
+    clash = mk(alphabet=["0", "1", "2"], rules=[{"symbol": "2", "mode": "allow", "before": "0"}, {"symbol": "2", "mode": "allow", "before": "1"}])
+    res = validate_spec(clash)
+    assert not res["ok"] and "a la vez" in res["errors"][0]
+
+
+def test_optional_start_end():
+    free = mk(start="", end="")
+    assert validate_spec(free)["ok"]
+    for kind in ("AFD", "AFND"):
+        assert check_word(free, kind, "1")["valid"] and check_word(free, kind, "1101")["valid"]
+        assert not check_word(free, kind, "")["valid"]
+    only_start = mk(start="1", end="")
+    assert check_word(only_start, "AFD", "10")["valid"] and not check_word(only_start, "AFD", "01")["valid"]
+    assert "Toda palabra inicia en 1." in spec_sentences(only_start)
+    only_end = mk(start="", end="1")
+    assert check_word(only_end, "AFD", "01")["valid"] and not check_word(only_end, "AFD", "10")["valid"]
+
+
+# ---------------------------------------------------------------------------
+# gramática
+# ---------------------------------------------------------------------------
+def grammar_accepts(g, word):
+    """Deriva la palabra con la gramática (lineal por la derecha) para comprobarla."""
+    prods = {p["left"]: p["right"] for p in g["productions"]}
+    current = {g["start"]}
+    for ch in word:
+        nxt = set()
+        for v in current:
+            for r in prods.get(v, []):
+                if r != EPSILON and r[0] == ch:
+                    nxt.add(r[1:])
+        current = nxt
+    return any(EPSILON in prods.get(v, []) for v in current)
+
+
+def test_grammar_matches_automaton():
+    rng = random.Random(11)
+    for spec in (mk(), normalize_spec(EXAMPLE_3), mk(length={"min": 3, "max": 5}), mk(counts=[{"symbol": "1", "min": 2, "max": 2}])):
+        for kind in ("AFD", "AFND"):
+            a, _ = build(spec, kind)
+            g = grammar_from_automaton(a)
+            assert g["start"] == "S" and "S" in g["variables"]
+            assert all(len(p["left"]) >= 1 for p in g["productions"])
+            for w in test_words(spec, rng)[:400]:
+                assert grammar_accepts(g, w) == run_word(a, w)["accepted"], (kind, w, g["lines"])
+            assert not any("error" in ln for ln in g["lines"])
+    g = grammar_from_automaton(build(mk(start="", end="", length={"min": None, "max": 2}), "AFD")[0])
+    assert g["lines"] and all("→" in ln for ln in g["lines"])
+
+
+# ---------------------------------------------------------------------------
+# práctica: el autómata del estudiante
+# ---------------------------------------------------------------------------
+def student(states, initial, finals, delta, alphabet=("0", "1")):
+    return {"alphabet": list(alphabet), "states": list(states), "initial": initial, "finals": list(finals), "delta": delta}
+
+
+def test_practice_correct_and_wrong():
+    spec = mk(rules=[{"symbol": "1", "mode": "forbid"}])  # inicia y termina en 0, sin 11
+    good = student("ABC", "A", "B", {"A": {"0": ["B"]}, "B": {"0": ["B"], "1": ["C"]}, "C": {"0": ["B"]}})
+    res = practice.check_student(spec, "AFD", good)
+    assert res["ok"] and res["correct"] and res["language_ok"] and res["kind_ok"], res
+    # le falta poder volver con 0 desde C
+    bad = student("ABC", "A", "B", {"A": {"0": ["B"]}, "B": {"0": ["B"], "1": ["C"]}, "C": {}})
+    res = practice.check_student(spec, "AFD", bad)
+    assert res["ok"] and not res["correct"]
+    miss = res["counterexamples"]["missing"]
+    assert miss and check_word_direct(spec, miss["word"])["valid"]  # la palabra más corta que sí cumple y rechaza
+    assert miss["word"] == "010"
+    # acepta de más: el inicial también es final (acepta la palabra vacía)
+    extra = student("ABC", "A", "AB", {"A": {"0": ["B"]}, "B": {"0": ["B"], "1": ["C"]}, "C": {"0": ["B"]}})
+    res = practice.check_student(spec, "AFD", extra)
+    assert not res["correct"] and res["counterexamples"]["extra"]["word"] == ""
+    # acepta palabras que terminan en 1
+    wrong = student("ABC", "A", "BC", {"A": {"0": ["B"]}, "B": {"0": ["B"], "1": ["C"]}, "C": {"0": ["B"]}})
+    res = practice.check_student(spec, "AFD", wrong)
+    assert res["counterexamples"]["extra"]["word"] == "01"
+    assert "finalizar en 0" in res["counterexamples"]["extra"]["reason"]
+
+
+def test_practice_kind_and_errors():
+    spec = mk()
+    nd = student("ABC", "A", "C", {"A": {"0": ["B", "C"], "1": ["A"]}, "B": {"0": ["B"], "1": ["B"]}, "C": {"0": ["C"], "1": ["C"]}})
+    res = practice.check_student(spec, "AFD", nd)
+    assert res["ok"] and not res["kind_ok"] and not res["correct"] and "AFND" in res["kind_note"]
+    # un AFD es un AFND válido
+    dfa = student("AB", "A", "B", {"A": {"0": ["B"]}, "B": {"0": ["B"], "1": ["B"]}})
+    res = practice.check_student(mk(start="0", end="", rules=[]), "AFND", dfa)
+    assert res["ok"] and res["kind_ok"] and "AFD también es un AFND" in res["kind_note"] and res["correct"]
+    # alfabeto distinto
+    other = student("AB", "A", "B", {"A": {"0": ["B"]}, "B": {}}, alphabet=("0", "2"))
+    res = practice.check_student(spec, "AFD", other)
+    assert not res["ok"] and "alfabeto" in res["errors"][0]
+    # sin finales alcanzables
+    nothing = student("AB", "A", "B", {"A": {"0": ["A"]}})
+    assert not practice.check_student(spec, "AFD", nothing)["ok"]
+
+
+def test_practice_word_run():
+    spec = mk(rules=[{"symbol": "1", "mode": "forbid"}])
+    bad = student("ABC", "A", "B", {"A": {"0": ["B"]}, "B": {"0": ["B"], "1": ["C"]}, "C": {}})
+    r = practice.student_word(spec, "AFD", bad, "010")
+    assert r["ok"] and not r["valid"] and r["expected"] and not r["agrees"] and "RECHAZA" in r["reason"]
+    r = practice.student_word(spec, "AFD", bad, "00")
+    assert r["valid"] and r["expected"] and r["agrees"]
+    r = practice.student_word(spec, "AFD", bad, "011")
+    assert not r["valid"] and not r["expected"] and r["agrees"]
+    assert practice.student_word(spec, "AFD", bad, "0x")["invalid_symbol"]
+
+
+def test_practice_equivalence_matches_brute_force():
+    """El veredicto exacto coincide con probar todas las palabras cortas."""
+    rng = random.Random(5)
+    for _ in range(60):
+        spec = random_spec(rng)
+        if not validate_spec(spec)["ok"]:
+            continue
+        alphabet = spec["alphabet"]
+        states = list("ABC")
+        delta = {s: {a: [t] for a in alphabet for t in [rng.choice(states + [None])] if t} for s in states}
+        nfa = student(states, "A", [s for s in states if rng.random() < 0.5], delta, alphabet=alphabet)
+        res = practice.check_student(spec, "AFND", nfa)
+        if not res["ok"]:
+            continue
+        bad = None
+        a = res["automaton"]
+        for w in [""] + list(words_up_to(alphabet, 6000)):
+            if run_word(a, w)["accepted"] != check_word_direct(spec, w)["valid"]:
+                bad = w
+                break
+        found = [c["word"] for c in res["counterexamples"].values() if c]
+        if bad is None:
+            assert res["language_ok"] and not found
+        else:
+            assert not res["language_ok"] and found
+            assert min(len(w) for w in found) <= len(bad)
 
 
 if __name__ == "__main__":

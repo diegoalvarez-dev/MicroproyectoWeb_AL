@@ -12,6 +12,7 @@ LETTERS = "abcdefghijklmnopqrstuvwxyz"
 MIN_SYMBOLS, MAX_SYMBOLS = 2, 5
 MAX_LEN = 12  # longitud máxima que se puede pedir para la palabra
 MAX_RUN = 8  # longitud máxima que se puede pedir para una subcadena
+MAX_COUNT = 12  # total máximo que se puede pedir de un símbolo (la palabra mide a lo sumo MAX_LEN)
 MAX_STATES = 40  # más estados que esto ya no se dibuja con claridad
 
 
@@ -24,36 +25,76 @@ def _to_int(v):
         return None
 
 
+def _merge_rules(raw_rules):
+    """Une las reglas que hablan del mismo símbolo (cada fila de la interfaz es una sola condición).
+
+    Devuelve (reglas, conflictos): `conflictos` son frases cuando dos filas se contradicen.
+    """
+    merged: dict = {}
+    conflicts: list = []
+    for r in raw_rules:
+        sym = (r.get("symbol") or "").strip()
+        mode = r.get("mode") or "allow"
+        m = merged.setdefault(
+            sym, {"symbol": sym, "mode": "allow", "before": None, "after": None, "min_run": None, "max_run": None, "_modes": set()}
+        )
+        m["_modes"].add(mode)
+        lo, hi = _to_int(r.get("min_run")), _to_int(r.get("max_run"))
+        if lo is not None and lo <= 1:
+            lo = None  # una subcadena siempre tiene al menos 1 símbolo
+        for side, label in (("before", "precedidas"), ("after", "seguidas")):
+            v = (r.get(side) or "").strip() or None
+            if v is None:
+                continue
+            if m[side] is not None and m[side] != v:
+                conflicts.append(
+                    f"Las subcadenas de {sym} no pueden ir {label} de {m[side]} y de {v} a la vez: deja una sola condición."
+                )
+            else:
+                m[side] = v
+        if lo is not None:
+            m["min_run"] = lo if m["min_run"] is None else max(m["min_run"], lo)
+        if hi is not None:
+            m["max_run"] = hi if m["max_run"] is None else min(m["max_run"], hi)
+    rules = []
+    for sym, m in merged.items():
+        modes = m.pop("_modes")
+        if "forbid" in modes:
+            m["mode"] = "forbid"
+            if "allow" in modes:
+                conflicts.append(
+                    f"Una indicación dice que pueden existir subcadenas de {sym} y otra que no pueden existir: se contradicen."
+                )
+        rules.append(m)
+    return rules, conflicts
+
+
 def normalize_spec(raw):
     """Limpia espacios y convierte '' en None. Acepta dicts o modelos pydantic."""
     if hasattr(raw, "model_dump"):
         raw = raw.model_dump()
-    rules = []
-    for r in raw.get("rules") or []:
-        lo, hi = _to_int(r.get("min_run")), _to_int(r.get("max_run"))
-        if lo is not None and lo <= 1:
-            lo = None  # una subcadena siempre tiene al menos 1 símbolo
-        rules.append(
-            {
-                "symbol": (r.get("symbol") or "").strip(),
-                "mode": r.get("mode") or "allow",
-                "before": (r.get("before") or "").strip() or None,
-                "after": (r.get("after") or "").strip() or None,
-                "min_run": lo,
-                "max_run": hi,
-            }
-        )
+    rules, conflicts = _merge_rules(raw.get("rules") or [])
     raw_len = raw.get("length") or {}
     lmin, lmax = _to_int(raw_len.get("min")), _to_int(raw_len.get("max"))
     if lmin is not None and lmin <= 1:
         lmin = None  # la palabra vacía ya no es válida, así que 1 no restringe
     length = {"min": lmin, "max": lmax} if (lmin is not None or lmax is not None) else None
+    counts = []
+    for c in raw.get("counts") or []:
+        cmin, cmax = _to_int(c.get("min")), _to_int(c.get("max"))
+        if cmin == 0:
+            cmin = None  # pedir «al menos 0» no restringe
+        if cmin is None and cmax is None:
+            continue
+        counts.append({"symbol": (c.get("symbol") or "").strip(), "min": cmin, "max": cmax})
     return {
         "alphabet": [str(a).strip() for a in (raw.get("alphabet") or [])],
         "start": (raw.get("start") or "").strip(),
         "end": (raw.get("end") or "").strip(),
         "rules": rules,
         "length": length,
+        "counts": counts,
+        "conflicts": conflicts,
     }
 
 
@@ -87,9 +128,9 @@ def validate_spec(spec, check_size=True):
         return {"ok": False, "errors": errors, "warnings": warnings}
 
     # --- inicio y fin ---------------------------------------------------
-    if spec["start"] not in alphabet:
+    if spec.get("start") and spec["start"] not in alphabet:
         errors.append("El símbolo con el que inicia la palabra debe pertenecer al alfabeto.")
-    if spec["end"] not in alphabet:
+    if spec.get("end") and spec["end"] not in alphabet:
         errors.append("El símbolo con el que finaliza la palabra debe pertenecer al alfabeto.")
 
     # --- longitud de la palabra ------------------------------------------
@@ -103,7 +144,7 @@ def validate_spec(spec, check_size=True):
         errors.append(f"La longitud mínima ({lmin}) no puede ser mayor que la máxima ({lmax}).")
 
     # --- reglas ---------------------------------------------------------
-    seen = set()
+    errors.extend(spec.get("conflicts") or [])
     for r in spec["rules"]:
         s = r["symbol"]
         if s not in alphabet:
@@ -112,9 +153,6 @@ def validate_spec(spec, check_size=True):
         if r["mode"] not in ("allow", "forbid"):
             errors.append(f"La regla sobre {s} tiene un tipo desconocido.")
             continue
-        if s in seen:
-            errors.append(f"Hay más de una regla para el símbolo {s}: deja solo una.")
-        seen.add(s)
         for side, label in (("before", "precedidas"), ("after", "seguidas")):
             v = r.get(side)
             if v is None:
@@ -142,18 +180,69 @@ def validate_spec(spec, check_size=True):
             warnings.append(
                 f"La regla de subcadenas de {s} no restringe nada: sin una regla en contra ya se permiten. Puedes dejarla como indicación."
             )
+    # --- suma total de un símbolo ---------------------------------------
+    counted = set()
+    for c in spec.get("counts") or []:
+        s, lo, hi = c["symbol"], c.get("min"), c.get("max")
+        if s not in alphabet:
+            errors.append(f"La suma total de «{s or '?'}» usa un símbolo que no está en el alfabeto.")
+            continue
+        if s in counted:
+            errors.append(f"Hay más de una indicación de suma total para el símbolo {s}: deja solo una.")
+        counted.add(s)
+        for v, label in ((lo, "mínimo"), (hi, "máximo")):
+            if v is not None and not (0 <= v <= MAX_COUNT):
+                errors.append(f"El total {label} de {s} debe estar entre 0 y {MAX_COUNT}.")
+        if lo is not None and hi is not None and lo > hi:
+            errors.append(f"La suma total de {s}: el mínimo ({lo}) no puede ser mayor que el máximo ({hi}).")
+    if errors:
+        return {"ok": False, "errors": errors, "warnings": warnings}
+
+    # --- coherencia entre las indicaciones --------------------------------
+    counts = spec.get("counts") or []
+    if lmax is not None:
+        for c in counts:
+            need = c.get("min") or 0
+            if need > lmax:
+                errors.append(
+                    f"No es coherente: pides {need} símbolos {c['symbol']} en total, pero la palabra mide como máximo {lmax}."
+                )
+        total_min = sum(c.get("min") or 0 for c in counts)
+        if total_min > lmax and not errors:
+            errors.append(
+                f"No es coherente: la suma de los totales mínimos ({total_min}) es mayor que la longitud máxima de la palabra ({lmax})."
+            )
+    if lmin is not None and len(counts) == len(alphabet) and all(c.get("max") is not None for c in counts):
+        total_max = sum(c["max"] for c in counts)
+        if total_max < lmin:
+            errors.append(
+                f"No es coherente: entre todos los símbolos la palabra tendría como máximo {total_max} símbolos, pero pides al menos {lmin}."
+            )
+    for c in counts:
+        if c.get("max") == 0:
+            for field, label in (("start", "inicia"), ("end", "finaliza")):
+                if spec.get(field) == c["symbol"]:
+                    errors.append(
+                        f"No es coherente: la palabra {label} en {c['symbol']}, pero el total de {c['symbol']} es 0."
+                    )
+        r_ = rules_by_symbol(spec).get(c["symbol"], {})
+        if (c.get("min") or 0) > 0 and c.get("max") is not None and r_.get("min_run") and c["max"] < r_["min_run"]:
+            errors.append(
+                f"No es coherente: las subcadenas de {c['symbol']} necesitan al menos {r_['min_run']} símbolos seguidos, "
+                f"pero el total de {c['symbol']} es como máximo {c['max']}."
+            )
     if errors:
         return {"ok": False, "errors": errors, "warnings": warnings}
 
     # --- contradicciones ------------------------------------------------
     rules = rules_by_symbol(spec)
-    rs = rules.get(spec["start"], {})
+    rs = rules.get(spec.get("start"), {})
     if rs.get("before"):
         errors.append(
             f"La palabra inicia en {spec['start']}, pero las subcadenas de {spec['start']} deben ir precedidas de {rs['before']}: "
             f"la primera no tiene nada antes. Quita esa condición o cambia el símbolo inicial."
         )
-    re_ = rules.get(spec["end"], {})
+    re_ = rules.get(spec.get("end"), {})
     if re_.get("after"):
         errors.append(
             f"La palabra finaliza en {spec['end']}, pero las subcadenas de {spec['end']} deben ir seguidas de {re_['after']}: "

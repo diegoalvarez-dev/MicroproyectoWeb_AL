@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import AutomatonCanvas from './AutomatonCanvas.jsx'
-import HistoryPanel from './HistoryPanel.jsx'
-import NfaDrawer from './NfaDrawer.jsx'
-import NfaForm from './NfaForm.jsx'
-import PanZoom from './PanZoom.jsx'
-import StepPlayer from './StepPlayer.jsx'
-import TransitionTable, { StateBadge } from './TransitionTable.jsx'
-import WordTester from './WordTester.jsx'
-import { Chip, Section, Segmented, secondaryBtn } from './ui.jsx'
-import { api } from '../lib/api.js'
-import { conversionProgress } from '../lib/convert.js'
-import { CONVERTER_KEY, loadHistory, saveHistory } from '../lib/history.js'
-import { computeLayout, layoutWithPositions } from '../lib/layout.js'
-import { runHighlight } from '../lib/highlight.js'
+import AutomatonCanvas from '../../compartido/componentes/AutomatonCanvas.jsx'
+import HistoryPanel from '../../compartido/componentes/HistoryPanel.jsx'
+import NfaDrawer from '../../compartido/componentes/NfaDrawer.jsx'
+import NfaForm from '../../compartido/componentes/NfaForm.jsx'
+import PanZoom from '../../compartido/componentes/PanZoom.jsx'
+import StepPlayer from '../../compartido/componentes/StepPlayer.jsx'
+import TransitionTable, { StateBadge } from '../../compartido/componentes/TransitionTable.jsx'
+import WordTester from '../../compartido/componentes/WordTester.jsx'
+import { Chip, Section, Segmented, secondaryBtn } from '../../compartido/componentes/ui.jsx'
+import { api } from './api.js'
+import { conversionProgress } from './convert.js'
+import { CONVERTER_KEY, loadHistory, saveHistory } from '../../compartido/lib/history.js'
+import { computeLayout, layoutWithPositions } from '../../compartido/lib/layout.js'
+import { runHighlight } from '../../compartido/lib/highlight.js'
 import {
   MAX_NFA_SYMBOLS,
   MIN_NFA_SYMBOLS,
@@ -27,7 +27,7 @@ import {
   nfaToApi,
   poolFor,
   setAlphabet,
-} from '../lib/nfa.js'
+} from '../../compartido/lib/nfa.js'
 
 const NO_HIGHLIGHT = { nodes: {}, edges: {} }
 const LEVELS = [
@@ -74,7 +74,7 @@ function Legend() {
   )
 }
 
-export default function ConverterModule() {
+export default function ConverterModule({ incoming = null }) {
   const [nfa, setNfaRaw] = useState(exampleNfa)
   const [mode, setMode] = useState('draw')
   const [source, setSource] = useState('manual')
@@ -188,7 +188,8 @@ export default function ConverterModule() {
   }
 
   // Registra el AFND (muestra el autómata y su tabla); si es AFD solo avisa.
-  const registerWith = async (n, useSource) => {
+  // Con `thenConvert` arranca la conversión enseguida (lo usa el módulo 3).
+  const registerWith = async (n, useSource, thenConvert = false) => {
     setBusy('register')
     try {
       const r = await api.nfaValidate(n)
@@ -223,6 +224,7 @@ export default function ConverterModule() {
         nfa: nfaToApi(n),
         text: describeNfa(n),
       })
+      if (thenConvert) await convertNow(n, nfaKey(n))
     } catch {
       setNetError('No se pudo registrar el autómata: el backend no respondió.')
     } finally {
@@ -230,26 +232,42 @@ export default function ConverterModule() {
     }
   }
 
+  // Convierte `n` (ya registrado con la clave `k`) y arranca la animación.
+  const convertNow = async (n, k) => {
+    const r = await api.nfaConvert(n)
+    if (!r.ok || !r.dfa) {
+      setNetError((r.errors || ['No se pudo convertir el autómata.']).join(' '))
+      return
+    }
+    setRun(null)
+    setConv({ key: k, steps: r.steps, dfa: r.dfa, examples: r.examples })
+    setIdx(0)
+    setPlaying(true)
+    setNetError('')
+  }
+
   const convert = async () => {
     if (!registered) return
     setBusy('convert')
     try {
-      const r = await api.nfaConvert(registered.nfa)
-      if (!r.ok || !r.dfa) {
-        setNetError((r.errors || ['No se pudo convertir el autómata.']).join(' '))
-        return
-      }
-      setRun(null)
-      setConv({ key: registered.key, steps: r.steps, dfa: r.dfa, examples: r.examples })
-      setIdx(0)
-      setPlaying(true)
-      setNetError('')
+      await convertNow(registered.nfa, registered.key)
     } catch {
       setNetError('No se pudo convertir el autómata: el backend no respondió.')
     } finally {
       setBusy(null)
     }
   }
+
+  // El módulo 3 manda un AFND: se registra y se convierte de una vez.
+  useEffect(() => {
+    if (!incoming) return
+    const n = nfaFromApi(incoming.nfa)
+    setNfaRaw(n)
+    setSource('manual')
+    setFlash((f) => f + 1)
+    registerWith(n, 'manual', true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming])
 
   const handleGenerate = async (level, alphabetKind) => {
     setBusy('generate')
