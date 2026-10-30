@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { R, layoutWithPositions } from '../lib/layout.js'
 import {
   CANVAS,
@@ -23,7 +23,7 @@ const TOOLS = [
   { id: 'edge', label: 'Flecha', hint: 'Haz clic en el estado de origen y luego en el de destino; después eliges los símbolos.' },
   { id: 'initial', label: 'Inicial', hint: 'Haz clic en el estado que será el inicial: recibe la flecha de entrada.' },
   { id: 'final', label: 'Final', hint: 'Haz clic en un estado para marcarlo o desmarcarlo como final (doble círculo).' },
-  { id: 'rename', label: 'Renombrar', hint: 'Haz clic en un estado para cambiarle la letra.' },
+  { id: 'rename', label: 'Renombrar', hint: 'Haz clic en un estado y escribe la nueva letra encima de él (o simplemente pulsa la tecla).' },
   { id: 'delete', label: 'Borrar', hint: 'Haz clic en un estado o en una flecha para borrarlo.' },
 ]
 const CURSOR = {
@@ -52,6 +52,7 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
  */
 export default function NfaDrawer({ nfa, onChange }) {
   const svgRef = useRef(null)
+  const renameRef = useRef(null) // casilla que aparece encima del estado que se renombra
   const gridId = `grid-${useId().replace(/:/g, '')}` // id único: hay varios dibujos montados a la vez
   const drag = useRef(null)
   const [tool, setToolRaw] = useState(nfa.states.length ? 'move' : 'state')
@@ -180,6 +181,41 @@ export default function NfaDrawer({ nfa, onChange }) {
     tool === 'edge' && pending ? `Origen ${pending}: haz clic en el estado de destino (o en el mismo para hacer un rizo).` : hint
   const full = nfa.states.length >= MAX_NFA_STATES
 
+  // Al renombrar, el cursor queda de una vez en la casilla que está encima del estado.
+  useEffect(() => {
+    if (renamingValid) {
+      renameRef.current?.focus()
+      renameRef.current?.select()
+    }
+  }, [renamingValid])
+
+  // Teclado directo: con «Renombrar» (estado elegido) o «Estado» basta con pulsar la letra.
+  const typing = useRef({})
+  typing.current = { tool, renamingValid, typeRename, typeNewName }
+  useEffect(() => {
+    const onKey = (e) => {
+      const t = e.target
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      const cur = typing.current
+      if (e.key === 'Escape' && cur.renamingValid) {
+        setRenaming(null)
+        setNotice('')
+        return
+      }
+      if (!/^[a-zA-Z]$/.test(e.key)) return
+      if (cur.tool === 'rename' && cur.renamingValid) {
+        e.preventDefault()
+        cur.typeRename(e.key)
+      } else if (cur.tool === 'state') {
+        e.preventDefault()
+        cur.typeNewName(e.key)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   let bar
   if (editingValid) {
     bar = (
@@ -233,7 +269,7 @@ export default function NfaDrawer({ nfa, onChange }) {
             className="field sym w-14 py-1! text-center text-lg"
           />
         </label>
-        {notice ? <span className="text-sm text-amber-200">{notice}</span> : <span className="text-sm text-white/45">Escribe la letra que quieras (A–Z).</span>}
+        {notice ? <span className="text-sm text-amber-200">{notice}</span> : <span className="text-sm text-white/45">Escribe la letra directo sobre el estado o pulsa la tecla (A–Z). Esc para cerrar.</span>}
         <button
           type="button"
           onClick={() => {
@@ -414,6 +450,32 @@ export default function NfaDrawer({ nfa, onChange }) {
               </g>
             )
           })}
+
+          {renamingValid && nfa.pos[renamingValid] && (
+            <foreignObject x={nfa.pos[renamingValid].x - 26} y={nfa.pos[renamingValid].y - 20} width={52} height={40}>
+              <input
+                ref={renameRef}
+                value={renamingValid}
+                onChange={(e) => typeRename(e.target.value)}
+                onFocus={(e) => e.target.select()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === 'Escape') {
+                    setRenaming(null)
+                    setNotice('')
+                  }
+                }}
+                maxLength={2}
+                aria-label="Letra del estado (escríbela aquí)"
+                data-testid="rename-inline"
+                spellCheck={false}
+                autoComplete="off"
+                autoCapitalize="characters"
+                inputMode="text"
+                className="sym h-full w-full rounded-lg border-2 border-amber-300 bg-[#0d1230] text-center text-lg font-bold text-white outline-none"
+              />
+            </foreignObject>
+          )}
         </svg>
       </div>
     </div>

@@ -1,5 +1,7 @@
+import { useContext, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { R } from '../lib/layout.js'
+import { R, layoutWithPositions } from '../lib/layout.js'
+import { DiagramContext } from './PanZoom.jsx'
 
 // Colores por estado de la animación
 export const TONES = {
@@ -70,43 +72,76 @@ function Edge({ edge, symbols, tone }) {
   )
 }
 
-function Node({ id, pos, state, tone }) {
+function Node({ id, pos, state, tone, ctx }) {
   const color = TONES[tone]
+  const drag = useRef(null)
+  const moving = !!ctx?.moving
+  const down = (e) => {
+    if (!moving || e.button !== 0) return
+    e.stopPropagation() // que no empiece a mover la vista
+    e.currentTarget.setPointerCapture(e.pointerId)
+    drag.current = { sx: e.clientX, sy: e.clientY, x: pos.x, y: pos.y }
+  }
+  const move = (e) => {
+    const d = drag.current
+    if (!d) return
+    ctx.setPos(id, { x: d.x + (e.clientX - d.sx) / ctx.scale, y: d.y + (e.clientY - d.sy) / ctx.scale })
+  }
+  const up = () => {
+    drag.current = null
+  }
   return (
-    <motion.g
-      initial={{ scale: 0, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      transition={{ type: 'spring', stiffness: 260, damping: 18 }}
-      style={{ transformBox: 'fill-box', transformOrigin: 'center', filter: glow(tone) }}
+    <g
+      data-testid={`diag-node-${id}`}
+      onPointerDown={down}
+      onPointerMove={move}
+      onPointerUp={up}
+      onPointerCancel={up}
+      onDoubleClick={(e) => moving && e.stopPropagation()}
+      style={moving ? { cursor: 'grab' } : undefined}
     >
-      <circle
-        cx={pos.x}
-        cy={pos.y}
-        r={R}
-        fill={state.error ? '#1a0b1c' : NODE_FILL}
-        stroke={color}
-        strokeWidth={2.6}
-      />
-      {state.final && (
-        <circle cx={pos.x} cy={pos.y} r={R - 6.5} fill="none" stroke={color} strokeWidth={2.2} />
-      )}
-      <text
-        x={pos.x}
-        y={pos.y + 5}
-        textAnchor="middle"
-        fontSize={state.error ? 13 : 17}
-        fontWeight={700}
-        fill="#f1f3ff"
-        style={{ fontFamily: 'var(--font-mono)' }}
+      <motion.g
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 18 }}
+        style={{ transformBox: 'fill-box', transformOrigin: 'center', filter: glow(tone) }}
       >
-        {id}
-      </text>
-    </motion.g>
+        <circle
+          cx={pos.x}
+          cy={pos.y}
+          r={R}
+          fill={state.error ? '#1a0b1c' : NODE_FILL}
+          stroke={color}
+          strokeWidth={2.6}
+        />
+        {state.final && (
+          <circle cx={pos.x} cy={pos.y} r={R - 6.5} fill="none" stroke={color} strokeWidth={2.2} />
+        )}
+        <text
+          x={pos.x}
+          y={pos.y + 5}
+          textAnchor="middle"
+          fontSize={state.error ? 13 : 17}
+          fontWeight={700}
+          fill="#f1f3ff"
+          style={{ fontFamily: 'var(--font-mono)' }}
+        >
+          {id}
+        </text>
+      </motion.g>
+    </g>
   )
 }
 
 // Dibuja el contenido (estados y flechas); el <svg> y el zoom los pone PanZoom.
-export default function AutomatonCanvas({ automaton, layout, visible, highlight, last }) {
+export default function AutomatonCanvas({ automaton, layout: baseLayout, visible, highlight, last }) {
+  const ctx = useContext(DiagramContext)
+  const overrides = ctx?.overrides
+  // si el usuario movió estados, se recalculan las flechas con las posiciones nuevas
+  const layout = useMemo(() => {
+    if (!overrides || !Object.keys(overrides).length) return baseLayout
+    return layoutWithPositions(automaton, { ...baseLayout.nodes, ...overrides })
+  }, [automaton, baseLayout, overrides])
   const byId = Object.fromEntries(automaton.states.map((s) => [s.id, s]))
 
   const nodeTone = (id) => {
@@ -140,7 +175,7 @@ export default function AutomatonCanvas({ automaton, layout, visible, highlight,
 
       {automaton.states.map((s) =>
         visible.states.has(s.id) ? (
-          <Node key={s.id} id={s.id} pos={layout.nodes[s.id]} state={s} tone={nodeTone(s.id)} />
+          <Node key={s.id} id={s.id} pos={layout.nodes[s.id]} state={s} tone={nodeTone(s.id)} ctx={ctx} />
         ) : null,
       )}
     </>

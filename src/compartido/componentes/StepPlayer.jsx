@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
 const Icon = ({ d, size = 18 }) => (
@@ -35,6 +36,61 @@ function CtlButton({ label, onClick, disabled, children, primary }) {
   )
 }
 
+// Barra de avance: un clic (o arrastrar) en cualquier parte lleva a ese paso; también responde a las flechas del teclado.
+function SeekBar({ idx, total, onSeek }) {
+  const ref = useRef(null)
+  const [dragging, setDragging] = useState(false)
+  const pct = total ? (idx / total) * 100 : 0
+  const at = (e) => {
+    const r = ref.current.getBoundingClientRect()
+    const f = Math.min(1, Math.max(0, (e.clientX - r.left) / (r.width || 1)))
+    onSeek(Math.round(f * total))
+  }
+  const onKey = (e) => {
+    const k = { ArrowLeft: idx - 1, ArrowDown: idx - 1, ArrowRight: idx + 1, ArrowUp: idx + 1, Home: 0, End: total }[e.key]
+    if (k === undefined) return
+    e.preventDefault()
+    onSeek(Math.min(total, Math.max(0, k)))
+  }
+  return (
+    <div
+      ref={ref}
+      role="slider"
+      tabIndex={0}
+      aria-label="Barra de avance de los pasos"
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={idx}
+      aria-valuetext={`Paso ${idx} de ${total}`}
+      title="Haz clic en la barra para ir a ese paso"
+      data-testid="seekbar"
+      className="group relative cursor-pointer py-2.5 outline-none focus-visible:[&>div]:ring-2 focus-visible:[&>div]:ring-cyan-300"
+      style={{ touchAction: 'none' }}
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture(e.pointerId)
+        setDragging(true)
+        at(e)
+      }}
+      onPointerMove={(e) => dragging && at(e)}
+      onPointerUp={() => setDragging(false)}
+      onPointerCancel={() => setDragging(false)}
+      onKeyDown={onKey}
+    >
+      <div className="h-1.5 overflow-hidden rounded-full bg-white/10 transition group-hover:h-2">
+        <div
+          className={`h-full rounded-full bg-gradient-to-r from-violet-500 to-cyan-400 ${dragging ? '' : 'transition-[width] duration-300'}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white opacity-0 shadow transition group-hover:opacity-100 group-focus-visible:opacity-100"
+        style={{ left: `${pct}%`, opacity: dragging ? 1 : undefined }}
+      />
+    </div>
+  )
+}
+
 export default function StepPlayer({ steps, idx, setIdx, playing, setPlaying, speed, setSpeed }) {
   const total = steps.length
   const current = idx > 0 ? steps[idx - 1] : null
@@ -44,6 +100,10 @@ export default function StepPlayer({ steps, idx, setIdx, playing, setPlaying, sp
     setPlaying(false)
     fn()
   }
+  const pauseAnd2 = (n) => {
+    setPlaying(false)
+    setIdx(n)
+  }
   const togglePlay = () => {
     if (playing) return setPlaying(false)
     if (done) setIdx(0)
@@ -52,13 +112,7 @@ export default function StepPlayer({ steps, idx, setIdx, playing, setPlaying, sp
 
   return (
     <div className="space-y-3">
-      <div className="h-1.5 overflow-hidden rounded-full bg-white/10" aria-hidden="true">
-        <motion.div
-          className="h-full rounded-full bg-gradient-to-r from-violet-500 to-cyan-400"
-          animate={{ width: `${total ? (idx / total) * 100 : 0}%` }}
-          transition={{ duration: 0.3 }}
-        />
-      </div>
+      <SeekBar idx={idx} total={total} onSeek={pauseAnd2} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">

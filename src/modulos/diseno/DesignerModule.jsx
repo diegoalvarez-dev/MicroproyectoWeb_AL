@@ -210,6 +210,7 @@ export default function DesignerModule() {
     try {
       const r = await api.generate(level, alphabetKind)
       setSpecRaw(toUi(r.spec))
+      setView('design')
       setSource(level)
       setLastLevel(level)
       setFlash((f) => f + 1)
