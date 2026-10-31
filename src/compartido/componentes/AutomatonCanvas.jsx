@@ -1,6 +1,7 @@
 import { useContext, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { R, layoutWithPositions } from '../lib/layout.js'
+import { ERROR_SYMBOL } from '../lib/names.js'
 import { DiagramContext } from './PanZoom.jsx'
 
 // Colores por estado de la animación
@@ -72,8 +73,21 @@ function Edge({ edge, symbols, tone }) {
   )
 }
 
+// Nombre del estado ajustado para que quepa DENTRO del círculo: los nombres largos
+// (p. ej. ABCDEFGH en la conversión) se parten en dos líneas y se achica la letra.
+const CHAR_W = 0.62 // ancho de una letra monoespaciada, en veces su tamaño
+const BUDGET = 40 // ancho útil dentro del círculo (el doble círculo de los finales deja ~47)
+export function stateLabel(id, isError) {
+  if (isError) return { lines: [ERROR_SYMBOL], size: 22 }
+  const n = id.length
+  if (n <= 4) return { lines: [id], size: Math.min(17, BUDGET / (CHAR_W * n)) }
+  const half = Math.ceil(n / 2)
+  return { lines: [id.slice(0, half), id.slice(half)], size: Math.max(7, Math.min(14, BUDGET / (CHAR_W * half))) }
+}
+
 function Node({ id, pos, state, tone, ctx }) {
   const color = TONES[tone]
+  const label = stateLabel(id, !!state.error)
   const drag = useRef(null)
   const moving = !!ctx?.moving
   const down = (e) => {
@@ -117,16 +131,12 @@ function Node({ id, pos, state, tone, ctx }) {
         {state.final && (
           <circle cx={pos.x} cy={pos.y} r={R - 6.5} fill="none" stroke={color} strokeWidth={2.2} />
         )}
-        <text
-          x={pos.x}
-          y={pos.y + 5}
-          textAnchor="middle"
-          fontSize={state.error ? 13 : 17}
-          fontWeight={700}
-          fill="#f1f3ff"
-          style={{ fontFamily: 'var(--font-mono)' }}
-        >
-          {id}
+        <text textAnchor="middle" fontSize={label.size} fontWeight={700} fill="#f1f3ff" style={{ fontFamily: 'var(--font-mono)' }}>
+          {label.lines.map((line, i) => (
+            <tspan key={i} x={pos.x} y={pos.y + (i - (label.lines.length - 1) / 2) * label.size * 1.05 + label.size * 0.34}>
+              {line}
+            </tspan>
+          ))}
         </text>
       </motion.g>
     </g>

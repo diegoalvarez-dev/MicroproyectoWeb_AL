@@ -1,10 +1,10 @@
-import { motion } from 'framer-motion'
-import { StateBadge } from '../../compartido/componentes/TransitionTable.jsx'
-import { pairKey } from './progress.js'
+import { motion } from "framer-motion";
+import { StateBadge } from "../../compartido/componentes/TransitionTable.jsx";
+import { pairKey } from "./progress.js";
 
 // Contenido de una casilla de la tabla de pares.
 function Mark({ value }) {
-  if (value === 'X')
+  if (value === "X")
     return (
       <motion.span
         key="X"
@@ -15,8 +15,8 @@ function Mark({ value }) {
       >
         ✕<span className="sr-only">marcado</span>
       </motion.span>
-    )
-  if (value === 'F')
+    );
+  if (value === "F")
     return (
       <motion.span
         key="F"
@@ -27,8 +27,8 @@ function Mark({ value }) {
       >
         <span className="sr-only">fusión</span>
       </motion.span>
-    )
-  if (value === 'P')
+    );
+  if (value === "P")
     return (
       <motion.span
         key="P"
@@ -39,29 +39,50 @@ function Mark({ value }) {
       >
         P
       </motion.span>
-    )
-  return null
+    );
+  return null;
 }
 
 /**
  * Tabla triangular de pares. Fila i, columna j (j ≤ i): el par (estado j, estado i).
  * La diagonal (cada estado con él mismo) ya viene pintada. Los nombres de las columnas van abajo.
  */
-export default function PairsTable({ states, marks, curKey, refKeys }) {
+export default function PairsTable({
+  states,
+  marks,
+  curKey,
+  refKeys,
+  focusMark = null,
+  canPick = false,
+  onPickCell,
+}) {
   return (
-    <div className="scroll-thin overflow-x-auto rounded-xl border border-white/10 bg-black/20 p-2" data-testid="pairs-table">
-      <table className="mx-auto border-separate border-spacing-1 text-center" aria-label="Tabla de pares distinguibles">
+    <div
+      className="scroll-thin overflow-x-auto rounded-xl border border-white/10 bg-black/20 p-2"
+      data-testid="pairs-table"
+    >
+      <table
+        className="mx-auto border-separate border-spacing-1 text-center"
+        aria-label="Tabla de pares distinguibles"
+      >
         <tbody>
           {states.map((row, i) => (
             <tr key={row.id}>
-              <th scope="row" className="sym pr-1 text-right text-sm font-bold text-cyan-200">
+              <th
+                scope="row"
+                className="sym pr-1 text-right text-sm font-bold text-cyan-200"
+              >
                 <span className="inline-flex items-center gap-0.5">
                   {row.initial && <span className="text-white/70">→</span>}
-                  <StateBadge name={row.id} final={row.final} className="h-8! min-w-8! text-sm" />
+                  <StateBadge
+                    name={row.id}
+                    final={row.final}
+                    className="min-h-8! min-w-8! text-sm"
+                  />
                 </span>
               </th>
               {states.map((col, j) => {
-                if (j > i) return <td key={col.id} />
+                if (j > i) return <td key={col.id} />;
                 if (j === i)
                   return (
                     <td
@@ -71,36 +92,52 @@ export default function PairsTable({ states, marks, curKey, refKeys }) {
                       className="h-10 min-w-10 rounded-lg bg-white/[0.12]"
                       style={{
                         backgroundImage:
-                          'repeating-linear-gradient(135deg, rgba(255,255,255,.10) 0 4px, transparent 4px 8px)',
+                          "repeating-linear-gradient(135deg, rgba(255,255,255,.10) 0 4px, transparent 4px 8px)",
                       }}
                       title="Diagonal: un estado con él mismo (ya está pintada)"
                     />
-                  )
-                const key = pairKey(col.id, row.id)
-                const mark = marks[key]
-                const isCur = key === curKey
-                const isRef = refKeys.has(key)
+                  );
+                const key = pairKey(col.id, row.id);
+                const mark = marks[key];
+                const isCur = key === curKey;
+                const isRef = refKeys.has(key);
+                const dim = focusMark && mark !== focusMark;
+                const picked = focusMark && mark === focusMark;
                 return (
                   <td
                     key={col.id}
                     data-cell={key}
                     data-mark={mark || undefined}
-                    data-tone={isCur ? 'cur' : isRef ? 'ref' : undefined}
-                    className={`h-10 min-w-10 rounded-lg border transition-colors duration-300 ${
+                    data-tone={isCur ? "cur" : isRef ? "ref" : undefined}
+                    onClick={
+                      canPick && mark ? () => onPickCell?.(key) : undefined
+                    }
+                    title={
+                      canPick && mark
+                        ? "Ver el análisis de este par"
+                        : undefined
+                    }
+                    className={`h-10 min-w-10 rounded-lg border transition-all duration-300 ${
+                      canPick && mark
+                        ? "cursor-pointer hover:brightness-125"
+                        : ""
+                    } ${
+                      dim ? "opacity-25" : ""
+                    } ${picked ? "ring-2 ring-white/80 ring-offset-1 ring-offset-[#070b1f]" : ""} ${
                       isCur
-                        ? 'border-cyan-300 bg-cyan-300/20 shadow-[0_0_14px_-2px_rgba(34,211,238,.8)]'
+                        ? "border-cyan-300 bg-cyan-300/20 shadow-[0_0_14px_-2px_rgba(34,211,238,.8)]"
                         : isRef
-                          ? 'border-violet-300 bg-violet-400/20'
-                          : mark === 'X'
-                            ? 'border-emerald-300/30 bg-emerald-300/10'
-                            : mark === 'F'
-                              ? 'border-amber-300/30 bg-amber-300/10'
-                              : 'border-white/10 bg-white/[0.03]'
+                          ? "border-violet-300 bg-violet-400/20"
+                          : mark === "X"
+                            ? "border-emerald-300/30 bg-emerald-300/10"
+                            : mark === "F"
+                              ? "border-amber-300/30 bg-amber-300/10"
+                              : "border-white/10 bg-white/[0.03]"
                     }`}
                   >
                     <Mark value={mark} />
                   </td>
-                )
+                );
               })}
             </tr>
           ))}
@@ -109,10 +146,18 @@ export default function PairsTable({ states, marks, curKey, refKeys }) {
           <tr>
             <th className="w-12" />
             {states.map((s) => (
-              <th key={s.id} scope="col" className="sym text-sm font-bold text-cyan-200">
+              <th
+                key={s.id}
+                scope="col"
+                className="sym text-sm font-bold text-cyan-200"
+              >
                 <span className="inline-flex items-center gap-0.5">
                   {s.initial && <span className="text-white/70">→</span>}
-                  <StateBadge name={s.id} final={s.final} className="h-8! min-w-8! text-sm" />
+                  <StateBadge
+                    name={s.id}
+                    final={s.final}
+                    className="min-h-8! min-w-8! text-sm"
+                  />
                 </span>
               </th>
             ))}
@@ -120,31 +165,129 @@ export default function PairsTable({ states, marks, curKey, refKeys }) {
         </tfoot>
       </table>
     </div>
-  )
+  );
 }
 
-export function PairsLegend() {
+const NOTES = [
+  {
+    mark: "X",
+    short: "M",
+    label: "distinguibles (se marca)",
+    glyph: (
+      <span className="sym text-base leading-none text-emerald-300">✕</span>
+    ),
+  },
+  {
+    mark: "F",
+    short: "F",
+    label: "equivalentes (se fusionan)",
+    glyph: (
+      <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-amber-300 bg-amber-300/30" />
+    ),
+  },
+  {
+    mark: "P",
+    short: "P",
+    label: "pendiente",
+    glyph: <span className="sym text-sm leading-none text-sky-300">P</span>,
+  },
+];
+
+/**
+ * Leyenda de la tabla de pares. Las notaciones M, F y P se pueden pulsar (cuando la animación
+ * está en pausa o terminó) para ver cuáles pares tienen esa notación.
+ *   marks: { 'A,B': 'X' | 'F' | 'P' } en el paso actual
+ */
+export function PairsLegend({
+  marks = {},
+  enabled = false,
+  active = null,
+  onPick,
+}) {
+  const pairsOf = (mark) =>
+    Object.entries(marks)
+      .filter(([, v]) => v === mark)
+      .map(([k]) => k);
+  const list = active ? pairsOf(active) : [];
+  const note = NOTES.find((n) => n.mark === active);
   return (
-    <ul className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-white/55" aria-label="Colores de la tabla de pares">
-      <li className="flex items-center gap-1.5">
-        <span className="sym text-base leading-none text-emerald-300">✕</span> M: distinguibles (se marca)
-      </li>
-      <li className="flex items-center gap-1.5">
-        <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-amber-300 bg-amber-300/30" /> F: equivalentes
-        (se fusionan)
-      </li>
-      <li className="flex items-center gap-1.5">
-        <span className="sym text-sm leading-none text-sky-300">P</span> pendiente
-      </li>
-      <li className="flex items-center gap-1.5">
-        <span className="inline-block h-3 w-3 rounded bg-white/25" /> diagonal
-      </li>
-      <li className="flex items-center gap-1.5">
-        <span className="inline-block h-3 w-3 rounded bg-cyan-300/70" /> par que se analiza
-      </li>
-      <li className="flex items-center gap-1.5">
-        <span className="inline-block h-3 w-3 rounded bg-violet-400/70" /> casillas a las que llega
-      </li>
-    </ul>
-  )
+    <div className="space-y-2">
+      <ul
+        className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-white/55"
+        aria-label="Notaciones de la tabla de pares"
+      >
+        {NOTES.map((n) => {
+          const count = pairsOf(n.mark).length;
+          const on = active === n.mark;
+          return (
+            <li key={n.mark}>
+              <button
+                type="button"
+                disabled={!enabled}
+                onClick={() => onPick?.(on ? null : n.mark)}
+                aria-pressed={on}
+                data-testid={`note-${n.short}`}
+                title={
+                  enabled
+                    ? "Ver los pares con esta notación"
+                    : "Pausa o termina la animación para ver los pares"
+                }
+                className={`flex items-center gap-1.5 rounded-lg border px-2 py-1 transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  on
+                    ? "border-white/60 bg-white/15 text-white"
+                    : "border-white/10 bg-white/5 enabled:hover:border-white/30 enabled:hover:text-white"
+                }`}
+              >
+                {n.glyph} {n.short}: {n.label}
+                <span className="sym rounded bg-black/30 px-1.5 text-[11px] text-white/70">
+                  {count}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+        <li className="flex items-center gap-1.5">
+          <span className="inline-block h-3 w-3 rounded bg-white/25" /> diagonal
+        </li>
+        <li className="flex items-center gap-1.5">
+          <span className="inline-block h-3 w-3 rounded bg-cyan-300/70" /> par
+          que se analiza
+        </li>
+        <li className="flex items-center gap-1.5">
+          <span className="inline-block h-3 w-3 rounded bg-violet-400/70" />{" "}
+          casillas a las que llega
+        </li>
+      </ul>
+
+      {active && (
+        <div
+          className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm"
+          data-testid="note-pairs"
+          aria-live="polite"
+        >
+          <p className="mb-1 text-xs text-white/55">
+            Pares con la notación{" "}
+            <span className="sym font-bold text-white">{note.short}</span> (
+            {note.label}):
+          </p>
+          {list.length ? (
+            <ul className="flex flex-wrap gap-1.5">
+              {list.map((k) => (
+                <li
+                  key={k}
+                  className="sym rounded-lg border border-white/15 bg-white/5 px-2 py-0.5"
+                >
+                  ({k.replace(",", ", ")})
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-white/45">
+              Todavía no hay pares con esta notación.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }

@@ -18,21 +18,35 @@ function statusOf(l) {
   return STATUS[l.status] || STATUS.empty
 }
 
-export function NotationChip({ item }) {
+export function NotationChip({ item, enabled = false, active = false, onPick }) {
   return (
-    <span
-      className={`sym inline-block rounded-lg border px-2 py-0.5 text-xs ${RESULT[item.result]}`}
-      title={item.review ? 'Resultado al revisar los pendientes' : undefined}
+    <button
+      type="button"
+      data-notation={item.notation}
+      disabled={!enabled}
+      onClick={() => onPick?.(item)}
+      className={`sym inline-block rounded-lg border px-2 py-0.5 text-xs transition ${RESULT[item.result]} ${
+        enabled ? 'cursor-pointer hover:brightness-125' : 'cursor-default'
+      } ${active ? 'ring-2 ring-white/80' : ''}`}
+      title={
+        enabled
+          ? 'Ver el análisis de este par'
+          : item.review
+            ? 'Resultado al revisar los pendientes (pausa la reproducción para consultarlo)'
+            : 'Pausa la reproducción para ver el análisis de este par'
+      }
     >
       {item.notation}
       {item.review && <span className="ml-1 text-white/45">↻</span>}
-    </span>
+    </button>
   )
 }
 
 /** Detalle del par que se analiza (una línea por símbolo) y registro de notaciones. */
-export default function AnalysisPanel({ progress }) {
-  const { pair, lines, decision, log, pending, phase } = progress
+export default function AnalysisPanel({ progress, view = null, canPick = false, activeAt = null, onPickNote, onClearView }) {
+  const { log, pending } = progress
+  // `view`: análisis de un par elegido por el usuario (notación o casilla); si no, el del paso actual
+  const { pair, lines, decision, phase, note } = view || progress
   return (
     <div className="grid gap-4 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]" data-testid="analysis">
       <div className="space-y-2 rounded-xl border border-white/10 bg-black/20 p-3">
@@ -41,6 +55,16 @@ export default function AnalysisPanel({ progress }) {
             <>
               Par en análisis: <span className="sym text-cyan-200">({pair.join(', ')})</span>
               {phase === 'review' && <span className="ml-2 text-xs font-normal text-white/45">(revisión de pendientes)</span>}
+              {view && (
+                <button
+                  type="button"
+                  onClick={onClearView}
+                  data-testid="clear-view"
+                  className="ml-3 rounded-lg border border-white/15 bg-white/5 px-2 py-0.5 text-xs font-normal text-white/70 hover:bg-white/10"
+                >
+                  Volver al paso actual
+                </button>
+              )}
             </>
           ) : (
             'Par en análisis'
@@ -48,6 +72,7 @@ export default function AnalysisPanel({ progress }) {
         </h3>
         {pair ? (
           <>
+            {note && <p className="rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-sm text-white/80">{note}</p>}
             <ul className="space-y-1.5">
               {lines.map((l) => {
                 const st = statusOf(l)
@@ -84,7 +109,10 @@ export default function AnalysisPanel({ progress }) {
             </AnimatePresence>
           </>
         ) : (
-          <p className="text-sm text-white/45">Pulsa reproducir: aquí verás, par por par, a dónde lleva cada símbolo.</p>
+          <p className="text-sm text-white/45">
+            Pulsa reproducir: aquí verás, par por par, a dónde lleva cada símbolo. Con la reproducción en pausa o terminada
+            puedes pulsar una notación o una casilla de la tabla de pares para ver su análisis.
+          </p>
         )}
       </div>
 
@@ -96,7 +124,7 @@ export default function AnalysisPanel({ progress }) {
           <ul className="scroll-thin flex max-h-40 flex-wrap gap-1.5 overflow-y-auto" data-testid="notations">
             {log.map((it, i) => (
               <li key={i}>
-                <NotationChip item={it} />
+                <NotationChip item={it} enabled={canPick} active={activeAt === it.at} onPick={onPickNote} />
               </li>
             ))}
           </ul>

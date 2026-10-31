@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { ERROR_SYMBOL } from '../lib/names.js'
 
 const Icon = ({ d, size = 18 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -165,7 +166,7 @@ export default function StepPlayer({ steps, idx, setIdx, playing, setPlaying, sp
             transition={{ duration: 0.18 }}
             className={current ? 'text-white/90' : 'text-white/45'}
           >
-            {current ? current.text : 'Pulsa reproducir para ver cómo se construye el autómata, estado por estado.'}
+          {current ? current.text.replace(/\berror\b/g, ERROR_SYMBOL) : 'Pulsa reproducir para ver cómo se construye el autómata, estado por estado.'}
           </motion.p>
         </AnimatePresence>
       </div>

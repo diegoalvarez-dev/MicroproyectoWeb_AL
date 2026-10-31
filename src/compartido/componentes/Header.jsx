@@ -1,12 +1,47 @@
-import { motion } from 'framer-motion'
+import { useState } from "react";
+import { motion } from "framer-motion";
 
-const TEAM = ['Diego Márquez', 'Juan Quintero', 'Diego Álvarez']
+// Fotos: coloca los archivos en  public/autores/  con estos nombres (jpg, png, jpeg o webp).
+// Si no hay foto todavía, se muestran las iniciales.
+const TEAM = [
+  { name: "Diego Álvarez", photo: "diego-alvarez" },
+  { name: "Diego Márquez", photo: "diego-marquez" },
+  { name: "Juan Quintero", photo: "juan-quintero" },
+];
+const EXTENSIONS = ["jpg", "png", "jpeg", "webp"];
+
+function Avatar({ name, photo }) {
+  const [attempt, setAttempt] = useState(0);
+  const initials = name
+    .split(" ")
+    .map((p) => p[0])
+    .join("");
+  return (
+    <span className="relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-violet-500 to-cyan-400 text-sm font-bold text-[#060919] ring-2 ring-white/15">
+      {attempt < EXTENSIONS.length ? (
+        <img
+          src={`/autores/${photo}.${EXTENSIONS[attempt]}`}
+          alt={name}
+          onError={() => setAttempt((a) => a + 1)}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : (
+        initials
+      )}
+    </span>
+  );
+}
 
 const MODULES = [
-  { id: 1, title: 'Diseño de autómatas', sub: 'AFD · AFND', ready: true },
-  { id: 2, title: 'AFND → AFD', sub: 'Construcción de subconjuntos', ready: true },
-  { id: 3, title: 'Minimización', sub: 'Pares distinguibles', ready: true },
-]
+  { id: 1, title: "Diseño de autómatas", sub: "AFD · AFND", ready: true },
+  {
+    id: 2,
+    title: "AFND → AFD",
+    sub: "Construcción de subconjuntos",
+    ready: true,
+  },
+  { id: 3, title: "Minimización", sub: "Pares distinguibles", ready: true },
+];
 
 function Logo() {
   return (
@@ -17,12 +52,37 @@ function Logo() {
           <stop offset="1" stopColor="#22d3ee" />
         </linearGradient>
       </defs>
-      <rect width="64" height="64" rx="16" fill="#0b1030" stroke="rgba(255,255,255,.12)" />
-      <circle cx="34" cy="32" r="16" fill="none" stroke="url(#logo-g)" strokeWidth="4" />
-      <circle cx="34" cy="32" r="8" fill="none" stroke="url(#logo-g)" strokeWidth="3" />
-      <path d="M5 32h11" stroke="#22d3ee" strokeWidth="4" strokeLinecap="round" />
+      <rect
+        width="64"
+        height="64"
+        rx="16"
+        fill="#0b1030"
+        stroke="rgba(255,255,255,.12)"
+      />
+      <circle
+        cx="34"
+        cy="32"
+        r="16"
+        fill="none"
+        stroke="url(#logo-g)"
+        strokeWidth="4"
+      />
+      <circle
+        cx="34"
+        cy="32"
+        r="8"
+        fill="none"
+        stroke="url(#logo-g)"
+        strokeWidth="3"
+      />
+      <path
+        d="M5 32h11"
+        stroke="#22d3ee"
+        strokeWidth="4"
+        strokeLinecap="round"
+      />
     </svg>
-  )
+  );
 }
 
 export default function Header({ module = 1, onModule = () => {} }) {
@@ -39,7 +99,9 @@ export default function Header({ module = 1, onModule = () => {} }) {
             <h1 className="text-2xl font-bold leading-tight tracking-tight sm:text-3xl">
               Autómatas <span className="grad-text">Finitos</span>
             </h1>
-            <p className="text-sm text-white/55">Microproyecto AL · Teoría de la computación</p>
+            <p className="text-sm text-white/55">
+              Microproyecto AF · Teoría de la computación
+            </p>
           </div>
         </motion.div>
 
@@ -50,18 +112,13 @@ export default function Header({ module = 1, onModule = () => {} }) {
           className="flex flex-wrap gap-2"
           aria-label="Equipo de trabajo"
         >
-          {TEAM.map((name) => (
+          {TEAM.map(({ name, photo }) => (
             <li
               key={name}
-              className="glass flex items-center gap-2 rounded-full! py-1.5 pl-1.5 pr-3.5 text-sm"
+              className="glass flex items-center gap-2.5 rounded-full! py-1.5 pl-1.5 pr-4 text-sm"
             >
-              <span className="grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-400 text-xs font-bold text-[#060919]">
-                {name
-                  .split(' ')
-                  .map((p) => p[0])
-                  .join('')}
-              </span>
-              {name}
+              <Avatar name={name} photo={photo} />
+              <span className="grad-text font-semibold">{name}</span>
             </li>
           ))}
         </motion.ul>
@@ -69,7 +126,7 @@ export default function Header({ module = 1, onModule = () => {} }) {
 
       <nav className="mt-6 grid gap-3 sm:grid-cols-3" aria-label="Módulos">
         {MODULES.map((m, i) => {
-          const active = m.id === module
+          const active = m.id === module;
           return (
             <motion.button
               key={m.id}
@@ -79,18 +136,20 @@ export default function Header({ module = 1, onModule = () => {} }) {
               transition={{ delay: 0.15 + i * 0.07 }}
               disabled={!m.ready}
               onClick={() => onModule(m.id)}
-              aria-current={active ? 'page' : undefined}
+              aria-current={active ? "page" : undefined}
               className={`glass flex items-center gap-3 px-4 py-3 text-left transition ${
                 active
-                  ? 'border-cyan-300/40! bg-cyan-300/[0.07]!'
+                  ? "border-cyan-300/40! bg-cyan-300/[0.07]!"
                   : m.ready
-                    ? 'hover:border-white/30!'
-                    : 'cursor-not-allowed opacity-55'
+                    ? "hover:border-white/30!"
+                    : "cursor-not-allowed opacity-55"
               }`}
             >
               <span
                 className={`grid h-9 w-9 place-items-center rounded-xl text-sm font-bold ${
-                  active ? 'bg-gradient-to-br from-violet-500 to-cyan-400 text-[#060919]' : 'bg-white/10'
+                  active
+                    ? "bg-gradient-to-br from-violet-500 to-cyan-400 text-[#060919]"
+                    : "bg-white/10"
                 }`}
               >
                 {m.id}
@@ -100,9 +159,9 @@ export default function Header({ module = 1, onModule = () => {} }) {
                 <span className="block text-xs text-white/50">{m.sub}</span>
               </span>
             </motion.button>
-          )
+          );
         })}
       </nav>
     </header>
-  )
+  );
 }

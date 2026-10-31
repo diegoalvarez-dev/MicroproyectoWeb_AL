@@ -1,20 +1,33 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { AnimatePresence, motion } from 'framer-motion'
-import AutomatonCanvas from '../../compartido/componentes/AutomatonCanvas.jsx'
-import HistoryPanel from '../../compartido/componentes/HistoryPanel.jsx'
-import NfaDrawer from '../../compartido/componentes/NfaDrawer.jsx'
-import NfaForm from '../../compartido/componentes/NfaForm.jsx'
-import PanZoom from '../../compartido/componentes/PanZoom.jsx'
-import StepPlayer from '../../compartido/componentes/StepPlayer.jsx'
-import TransitionTable, { StateBadge } from '../../compartido/componentes/TransitionTable.jsx'
-import WordTester from '../../compartido/componentes/WordTester.jsx'
-import { Chip, Section, Segmented, secondaryBtn } from '../../compartido/componentes/ui.jsx'
-import { api } from './api.js'
-import { conversionProgress } from './convert.js'
-import { CONVERTER_KEY, loadHistory, saveHistory } from '../../compartido/lib/history.js'
-import { computeLayout, layoutWithPositions } from '../../compartido/lib/layout.js'
-import { runHighlight } from '../../compartido/lib/highlight.js'
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
+import AutomatonCanvas from "../../compartido/componentes/AutomatonCanvas.jsx";
+import FormalStructure from "../../compartido/componentes/FormalStructure.jsx";
+import HistoryPanel from "../../compartido/componentes/HistoryPanel.jsx";
+import NfaDrawer from "../../compartido/componentes/NfaDrawer.jsx";
+import NfaForm from "../../compartido/componentes/NfaForm.jsx";
+import PanZoom from "../../compartido/componentes/PanZoom.jsx";
+import StepPlayer from "../../compartido/componentes/StepPlayer.jsx";
+import TransitionTable, {
+  StateBadge,
+} from "../../compartido/componentes/TransitionTable.jsx";
+import {
+  Chip,
+  Section,
+  Segmented,
+  secondaryBtn,
+} from "../../compartido/componentes/ui.jsx";
+import { api } from "./api.js";
+import { conversionProgress } from "./convert.js";
+import {
+  CONVERTER_KEY,
+  loadHistory,
+  saveHistory,
+} from "../../compartido/lib/history.js";
+import {
+  computeLayout,
+  layoutWithPositions,
+} from "../../compartido/lib/layout.js";
 import {
   MAX_NFA_SYMBOLS,
   MIN_NFA_SYMBOLS,
@@ -27,15 +40,30 @@ import {
   nfaToApi,
   poolFor,
   setAlphabet,
-} from '../../compartido/lib/nfa.js'
+} from "../../compartido/lib/nfa.js";
 
-const NO_HIGHLIGHT = { nodes: {}, edges: {} }
+const NO_HIGHLIGHT = { nodes: {}, edges: {} };
 const LEVELS = [
-  { id: 'facil', label: 'Fácil', hint: '3 estados, 2 símbolos', color: '#34d399' },
-  { id: 'medio', label: 'Medio', hint: '4 estados, hasta 3 símbolos', color: '#fbbf24' },
-  { id: 'dificil', label: 'Difícil', hint: '5–6 estados, hasta 3 símbolos', color: '#fb7185' },
-]
-const STEP_MS = { init: 900, row: 700, cell: 1250, done: 900 } // pausa antes de mostrar cada tipo de paso
+  {
+    id: "facil",
+    label: "Fácil",
+    hint: "3 estados, 2 símbolos",
+    color: "#34d399",
+  },
+  {
+    id: "medio",
+    label: "Medio",
+    hint: "4 estados, hasta 3 símbolos",
+    color: "#fbbf24",
+  },
+  {
+    id: "dificil",
+    label: "Difícil",
+    hint: "5–6 estados, hasta 3 símbolos",
+    color: "#fb7185",
+  },
+];
+const STEP_MS = { init: 900, row: 700, cell: 1250, done: 900 }; // pausa antes de mostrar cada tipo de paso
 
 // Todo el autómata a la vista (el AFND registrado se muestra de una vez).
 function fullyVisible(automaton, layout) {
@@ -43,168 +71,186 @@ function fullyVisible(automaton, layout) {
     states: new Set(automaton.states.map((s) => s.id)),
     edges: new Map(layout.edges.map((e) => [e.key, e.symbols])),
     last: null,
-  }
+  };
 }
 
 function Banner({ tone, children }) {
   const cls = {
-    err: 'border-rose-400/40 bg-rose-400/10 text-rose-100',
-    warn: 'border-amber-300/35 bg-amber-300/10 text-amber-100',
-    ok: 'border-emerald-300/30 bg-emerald-300/[0.07] text-white/90',
-  }[tone]
-  return <div className={`rounded-xl border px-3.5 py-2.5 text-sm ${cls}`}>{children}</div>
+    err: "border-rose-400/40 bg-rose-400/10 text-rose-100",
+    warn: "border-amber-300/35 bg-amber-300/10 text-amber-100",
+    ok: "border-emerald-300/30 bg-emerald-300/[0.07] text-white/90",
+  }[tone];
+  return (
+    <div className={`rounded-xl border px-3.5 py-2.5 text-sm ${cls}`}>
+      {children}
+    </div>
+  );
 }
 
 function Legend() {
   return (
-    <ul className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-white/55" aria-label="Colores de la conversión">
+    <ul
+      className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-white/55"
+      aria-label="Colores de la conversión"
+    >
       <li className="flex items-center gap-1.5">
-        <span className="inline-block h-3 w-3 rounded bg-amber-300/70" /> amarillo: estado nuevo (entra a la columna Q)
+        <span className="inline-block h-3 w-3 rounded bg-amber-300/70" />{" "}
+        amarillo: estado nuevo (entra a la columna Q)
       </li>
       <li className="flex items-center gap-1.5">
-        <span className="inline-block h-3 w-3 rounded bg-emerald-300/70" /> verde: ya estaba en Q
+        <span className="inline-block h-3 w-3 rounded bg-emerald-300/70" />{" "}
+        verde: ya estaba en Q
       </li>
       <li className="flex items-center gap-1.5">
-        <span className="inline-block h-3 w-3 rounded bg-cyan-300/70" /> cian: estado que se analiza
+        <span className="inline-block h-3 w-3 rounded bg-cyan-300/70" /> cian:
+        estado que se analiza
       </li>
       <li className="flex items-center gap-1.5">
-        <span className="inline-block h-3 w-3 rounded bg-violet-400/70" /> violeta: celdas del AFND que se unen
+        <span className="inline-block h-3 w-3 rounded bg-violet-400/70" />{" "}
+        violeta: celdas del AFND que se unen
       </li>
     </ul>
-  )
+  );
 }
 
 export default function ConverterModule({ incoming = null }) {
-  const [nfa, setNfaRaw] = useState(exampleNfa)
-  const [mode, setMode] = useState('draw')
-  const [source, setSource] = useState('manual')
-  const [lastLevel, setLastLevel] = useState('facil')
-  const [genKind, setGenKind] = useState('random')
-  const [flash, setFlash] = useState(0)
-  const [validation, setValidation] = useState({ ok: false, errors: [], warnings: [], loading: true, key: '' })
-  const [registered, setRegistered] = useState(null) // AFND ya registrado (se ve el autómata y su tabla)
-  const [conv, setConv] = useState(null) // conversión en curso o terminada
-  const [idx, setIdx] = useState(0)
-  const [playing, setPlaying] = useState(false)
-  const [speed, setSpeed] = useState(1)
-  const [run, setRun] = useState(null)
-  const [busy, setBusy] = useState(null) // 'register' | 'convert' | 'generate' | 'word'
-  const [netError, setNetError] = useState('')
-  const [full, setFull] = useState(false)
-  const [history, setHistory] = useState(() => loadHistory(CONVERTER_KEY))
-  const registeredRef = useRef(null)
-  const conversionRef = useRef(null)
+  const [nfa, setNfaRaw] = useState(exampleNfa);
+  const [mode, setMode] = useState("draw");
+  const [source, setSource] = useState("manual");
+  const [lastLevel, setLastLevel] = useState("facil");
+  const [genKind, setGenKind] = useState("random");
+  const [flash, setFlash] = useState(0);
+  const [validation, setValidation] = useState({
+    ok: false,
+    errors: [],
+    warnings: [],
+    loading: true,
+    key: "",
+  });
+  const [registered, setRegistered] = useState(null); // AFND ya registrado (se ve el autómata y su tabla)
+  const [conv, setConv] = useState(null); // conversión en curso o terminada
+  const [idx, setIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const [busy, setBusy] = useState(null); // 'register' | 'convert' | 'generate' | 'word'
+  const [netError, setNetError] = useState("");
+  const [full, setFull] = useState(false);
+  const [history, setHistory] = useState(() => loadHistory(CONVERTER_KEY));
+  const registeredRef = useRef(null);
+  const conversionRef = useRef(null);
 
-  const key = useMemo(() => nfaKey(nfa), [nfa])
+  const key = useMemo(() => nfaKey(nfa), [nfa]);
   const updateNfa = useCallback((next) => {
-    setNfaRaw(next)
-    setSource('manual')
-  }, [])
-  const staleRegistered = !!registered && registered.key !== key
+    setNfaRaw(next);
+    setSource("manual");
+  }, []);
+  const staleRegistered = !!registered && registered.key !== key;
 
   // ---- validación en vivo (backend); mover estados en el dibujo no la repite ----
   useEffect(() => {
-    let cancelled = false
-    setValidation((v) => ({ ...v, loading: true }))
+    let cancelled = false;
+    setValidation((v) => ({ ...v, loading: true }));
     const t = setTimeout(async () => {
       try {
-        const r = await api.nfaValidate(nfa)
-        if (cancelled) return
-        setValidation({ ...r, loading: false, key })
-        setNetError('')
+        const r = await api.nfaValidate(nfa);
+        if (cancelled) return;
+        setValidation({ ...r, loading: false, key });
+        setNetError("");
       } catch {
-        if (cancelled) return
-        setValidation((v) => ({ ...v, ok: false, loading: false, key }))
-        setNetError('No se pudo conectar con el backend. ¿Está corriendo «npm run dev:api»?')
+        if (cancelled) return;
+        setValidation((v) => ({ ...v, ok: false, loading: false, key }));
+        setNetError(
+          "No se pudo conectar con el backend. ¿Está corriendo «npm run dev:api»?",
+        );
       }
-    }, 250)
+    }, 250);
     return () => {
-      cancelled = true
-      clearTimeout(t)
-    }
+      cancelled = true;
+      clearTimeout(t);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
+  }, [key]);
 
   // ---- reproducción de la conversión ------------------------------------------
   useEffect(() => {
-    if (!playing || !conv) return undefined
+    if (!playing || !conv) return undefined;
     if (idx >= conv.steps.length) {
-      setPlaying(false)
-      return undefined
+      setPlaying(false);
+      return undefined;
     }
-    const t = setTimeout(() => setIdx((i) => i + 1), STEP_MS[conv.steps[idx].kind] / speed)
-    return () => clearTimeout(t)
-  }, [playing, idx, speed, conv])
-
-  // ---- recorrido de una palabra ---------------------------------------------------
-  useEffect(() => {
-    if (!run || run.finished) return undefined
-    const n = run.result.path.length
-    const delay = run.k === 0 ? 450 : 700 / speed
     const t = setTimeout(
-      () => setRun((r) => (r && !r.finished ? (r.k < n ? { ...r, k: r.k + 1 } : { ...r, finished: true }) : r)),
-      delay,
-    )
-    return () => clearTimeout(t)
-  }, [run, speed])
+      () => setIdx((i) => i + 1),
+      STEP_MS[conv.steps[idx].kind] / speed,
+    );
+    return () => clearTimeout(t);
+  }, [playing, idx, speed, conv]);
 
   // pantalla completa del diagrama de la conversión
   useEffect(() => {
-    if (!full) return undefined
-    const onKey = (e) => e.key === 'Escape' && setFull(false)
-    window.addEventListener('keydown', onKey)
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    if (!full) return undefined;
+    const onKey = (e) => e.key === "Escape" && setFull(false);
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     return () => {
-      window.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prev
-    }
-  }, [full])
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [full]);
 
   // al registrar o convertir, baja hasta lo nuevo
   useEffect(() => {
-    if (registered) registeredRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-  }, [registered])
+    if (registered)
+      registeredRef.current?.scrollIntoView?.({
+        behavior: "smooth",
+        block: "start",
+      });
+  }, [registered]);
   useEffect(() => {
-    if (conv) conversionRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-  }, [conv])
+    if (conv)
+      conversionRef.current?.scrollIntoView?.({
+        behavior: "smooth",
+        block: "start",
+      });
+  }, [conv]);
 
   // ---- acciones --------------------------------------------------------------------
   const pushHistory = useCallback((entry) => {
     setHistory((prev) => {
-      const next = [entry, ...prev.filter((h) => h.key !== entry.key)].slice(0, 40)
-      saveHistory(next, CONVERTER_KEY)
-      return next
-    })
-  }, [])
+      const next = [entry, ...prev.filter((h) => h.key !== entry.key)].slice(
+        0,
+        40,
+      );
+      saveHistory(next, CONVERTER_KEY);
+      return next;
+    });
+  }, []);
 
   const resetResults = () => {
-    setRegistered(null)
-    setConv(null)
-    setRun(null)
-    setIdx(0)
-    setPlaying(false)
-    setFull(false)
-  }
+    setRegistered(null);
+    setConv(null);
+    setIdx(0);
+    setPlaying(false);
+    setFull(false);
+  };
 
   // Registra el AFND (muestra el autómata y su tabla); si es AFD solo avisa.
   // Con `thenConvert` arranca la conversión enseguida (lo usa el módulo 3).
   const registerWith = async (n, useSource, thenConvert = false) => {
-    setBusy('register')
+    setBusy("register");
     try {
-      const r = await api.nfaValidate(n)
+      const r = await api.nfaValidate(n);
       if (!r.ok) {
-        setValidation({ ...r, loading: false, key: nfaKey(n) })
-        return
+        setValidation({ ...r, loading: false, key: nfaKey(n) });
+        return;
       }
-      if (r.kind !== 'AFND') {
-        setValidation({ ...r, loading: false, key: nfaKey(n) })
-        return
+      if (r.kind !== "AFND") {
+        setValidation({ ...r, loading: false, key: nfaKey(n) });
+        return;
       }
-      setConv(null)
-      setRun(null)
-      setIdx(0)
-      setPlaying(false)
+      setConv(null);
+      setIdx(0);
+      setPlaying(false);
       setRegistered({
         key: nfaKey(n),
         nfa: n,
@@ -213,147 +259,147 @@ export default function ConverterModule({ incoming = null }) {
         pos: n.pos,
         nondeterministic: r.nondeterministic,
         warnings: r.warnings,
-      })
-      setNetError('')
+      });
+      setNetError("");
       pushHistory({
         id: Date.now(),
         key: nfaKey(n),
         ts: Date.now(),
-        kind: 'AFND',
+        kind: "AFND",
         source: useSource,
         nfa: nfaToApi(n),
         text: describeNfa(n),
-      })
-      if (thenConvert) await convertNow(n, nfaKey(n))
+      });
+      if (thenConvert) await convertNow(n, nfaKey(n));
     } catch {
-      setNetError('No se pudo registrar el autómata: el backend no respondió.')
+      setNetError("No se pudo registrar el autómata: el backend no respondió.");
     } finally {
-      setBusy(null)
+      setBusy(null);
     }
-  }
+  };
 
   // Convierte `n` (ya registrado con la clave `k`) y arranca la animación.
   const convertNow = async (n, k) => {
-    const r = await api.nfaConvert(n)
+    const r = await api.nfaConvert(n);
     if (!r.ok || !r.dfa) {
-      setNetError((r.errors || ['No se pudo convertir el autómata.']).join(' '))
-      return
+      setNetError(
+        (r.errors || ["No se pudo convertir el autómata."]).join(" "),
+      );
+      return;
     }
-    setRun(null)
-    setConv({ key: k, steps: r.steps, dfa: r.dfa, examples: r.examples })
-    setIdx(0)
-    setPlaying(true)
-    setNetError('')
-  }
+    setConv({ key: k, steps: r.steps, dfa: r.dfa, examples: r.examples });
+    setIdx(0);
+    setPlaying(true);
+    setNetError("");
+  };
 
   const convert = async () => {
-    if (!registered) return
-    setBusy('convert')
+    if (!registered) return;
+    setBusy("convert");
     try {
-      await convertNow(registered.nfa, registered.key)
+      await convertNow(registered.nfa, registered.key);
     } catch {
-      setNetError('No se pudo convertir el autómata: el backend no respondió.')
+      setNetError("No se pudo convertir el autómata: el backend no respondió.");
     } finally {
-      setBusy(null)
+      setBusy(null);
     }
-  }
+  };
 
   // El módulo 3 manda un AFND: se registra y se convierte de una vez.
   useEffect(() => {
-    if (!incoming) return
-    const n = nfaFromApi(incoming.nfa)
-    setNfaRaw(n)
-    setSource('manual')
-    setFlash((f) => f + 1)
-    registerWith(n, 'manual', true)
+    if (!incoming) return;
+    const n = nfaFromApi(incoming.nfa);
+    setNfaRaw(n);
+    setSource("manual");
+    setFlash((f) => f + 1);
+    registerWith(n, "manual", true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [incoming])
+  }, [incoming]);
 
   const handleGenerate = async (level, alphabetKind) => {
-    setBusy('generate')
+    setBusy("generate");
     try {
-      const r = await api.nfaGenerate(level, alphabetKind)
-      setNfaRaw(nfaFromApi(r.nfa))
-      setSource(level)
-      setLastLevel(level)
-      setFlash((f) => f + 1)
-      setNetError('')
+      const r = await api.nfaGenerate(level, alphabetKind);
+      setNfaRaw(nfaFromApi(r.nfa));
+      setSource(level);
+      setLastLevel(level);
+      setFlash((f) => f + 1);
+      setNetError("");
     } catch {
-      setNetError('No se pudo generar el ejercicio: el backend no respondió.')
+      setNetError("No se pudo generar el ejercicio: el backend no respondió.");
     } finally {
-      setBusy(null)
+      setBusy(null);
     }
-  }
+  };
 
   const handleClear = () => {
-    setNfaRaw(blankNfa())
-    setSource('manual')
-    resetResults()
-    setNetError('')
-    setFlash((f) => f + 1)
-  }
-
-  const handleRunWord = async (word) => {
-    if (!registered || !conv) return
-    setBusy('word')
-    setPlaying(false)
-    setIdx(conv.steps.length)
-    try {
-      const r = await api.nfaCheckWord(registered.nfa, word)
-      if (r.ok) setRun({ result: r, k: 0, finished: false })
-    } catch {
-      setNetError('No se pudo validar la palabra: el backend no respondió.')
-    } finally {
-      setBusy(null)
-    }
-  }
+    setNfaRaw(blankNfa());
+    setSource("manual");
+    resetResults();
+    setNetError("");
+    setFlash((f) => f + 1);
+  };
 
   const loadFromHistory = (item) => {
-    const n = nfaFromApi(item.nfa)
-    setNfaRaw(n)
-    setSource(item.source)
-    if (item.source !== 'manual') setLastLevel(item.source)
-    setFlash((f) => f + 1)
-    resetResults()
-    registerWith(n, item.source)
-  }
+    const n = nfaFromApi(item.nfa);
+    setNfaRaw(n);
+    setSource(item.source);
+    if (item.source !== "manual") setLastLevel(item.source);
+    setFlash((f) => f + 1);
+    resetResults();
+    registerWith(n, item.source);
+  };
 
   // ---- alfabeto -----------------------------------------------------------------------
-  const alphaKind = kindOf(nfa.alphabet)
-  const pool = poolFor(alphaKind)
+  const alphaKind = kindOf(nfa.alphabet);
+  const pool = poolFor(alphaKind);
   const switchAlphabet = (k) => {
-    if (k === alphaKind) return
-    updateNfa({ ...nfa, alphabet: poolFor(k).slice(0, 2), delta: {} })
-  }
+    if (k === alphaKind) return;
+    updateNfa({ ...nfa, alphabet: poolFor(k).slice(0, 2), delta: {} });
+  };
   const toggleSymbol = (s) => {
-    const has = nfa.alphabet.includes(s)
-    let next = has ? nfa.alphabet.filter((x) => x !== s) : [...nfa.alphabet, s]
-    if ((has && next.length < MIN_NFA_SYMBOLS) || (!has && next.length > MAX_NFA_SYMBOLS)) return
-    next = pool.filter((x) => next.includes(x))
-    updateNfa(setAlphabet(nfa, next))
-  }
+    const has = nfa.alphabet.includes(s);
+    let next = has ? nfa.alphabet.filter((x) => x !== s) : [...nfa.alphabet, s];
+    if (
+      (has && next.length < MIN_NFA_SYMBOLS) ||
+      (!has && next.length > MAX_NFA_SYMBOLS)
+    )
+      return;
+    next = pool.filter((x) => next.includes(x));
+    updateNfa(setAlphabet(nfa, next));
+  };
 
   // ---- derivados ------------------------------------------------------------------------
   const regLayout = useMemo(
-    () => (registered ? layoutWithPositions(registered.automaton, registered.pos) : null),
+    () =>
+      registered
+        ? layoutWithPositions(registered.automaton, registered.pos)
+        : null,
     [registered],
-  )
+  );
   const regVisible = useMemo(
-    () => (registered && regLayout ? fullyVisible(registered.automaton, regLayout) : null),
+    () =>
+      registered && regLayout
+        ? fullyVisible(registered.automaton, regLayout)
+        : null,
     [registered, regLayout],
-  )
-  const dfaLayout = useMemo(() => (conv ? computeLayout(conv.dfa.automaton) : null), [conv])
+  );
+  const dfaLayout = useMemo(
+    () => (conv ? computeLayout(conv.dfa.automaton) : null),
+    [conv],
+  );
   const progress = useMemo(
-    () => (conv ? conversionProgress(conv.steps, idx, conv.dfa.automaton) : null),
+    () =>
+      conv ? conversionProgress(conv.steps, idx, conv.dfa.automaton) : null,
     [conv, idx],
-  )
-  const highlight = run ? runHighlight(run) : progress ? progress.highlight : NO_HIGHLIGHT
-  const finished = !!conv && idx >= conv.steps.length
+  );
+  const highlight = progress ? progress.highlight : NO_HIGHLIGHT;
+  const finished = !!conv && idx >= conv.steps.length;
 
-  const fresh = validation.key === key && !validation.loading
-  const isAfd = fresh && validation.ok && validation.kind === 'AFD'
-  const isAfnd = fresh && validation.ok && validation.kind === 'AFND'
-  const lvlLabel = LEVELS.find((l) => l.id === lastLevel)?.label ?? 'Fácil'
+  const fresh = validation.key === key && !validation.loading;
+  const isAfd = fresh && validation.ok && validation.kind === "AFD";
+  const isAfnd = fresh && validation.ok && validation.kind === "AFND";
+  const lvlLabel = LEVELS.find((l) => l.id === lastLevel)?.label ?? "Fácil";
 
   // En pantalla completa se saca del panel con un portal: el panel usa backdrop-filter y
   // eso haría que `fixed` se midiera contra el panel y no contra la ventana.
@@ -361,26 +407,29 @@ export default function ConverterModule({ incoming = null }) {
     conv && dfaLayout && progress && registered ? (
       <div
         className={
-          full ? 'fixed inset-0 z-50 m-0! flex flex-col gap-3 bg-[#060919] p-4' : 'min-w-0'
+          full
+            ? "fixed inset-0 z-50 m-0! flex flex-col gap-3 bg-[#060919] p-4"
+            : "min-w-0"
         }
       >
         <PanZoom
           bounds={dfaLayout.bounds}
+          title="Diagrama de transición del AFD (se va construyendo)"
           resetKey={`${registered.key}-${conv.steps.length}-${full}`}
           expanded={full}
           onToggleExpand={() => setFull((v) => !v)}
-          className={full ? 'min-h-0 flex-1' : 'h-[460px] sm:h-[560px]'}
+          className={full ? "min-h-0 flex-1" : "h-[460px] sm:h-[560px]"}
         >
           <AutomatonCanvas
             automaton={conv.dfa.automaton}
             layout={dfaLayout}
             visible={progress.visible}
             highlight={highlight}
-            last={run ? null : progress.visible.last}
+            last={progress.visible.last}
           />
         </PanZoom>
       </div>
-    ) : null
+    ) : null;
 
   return (
     <main className="mx-auto max-w-[1500px] space-y-6 px-4 pb-10">
@@ -404,10 +453,14 @@ export default function ConverterModule({ incoming = null }) {
           <h2 className="text-lg font-bold">Registrar un AFND</h2>
           <span
             className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-              source === 'manual' ? 'bg-white/10 text-white/60' : 'bg-violet-400/20 text-violet-200'
+              source === "manual"
+                ? "bg-white/10 text-white/60"
+                : "bg-violet-400/20 text-violet-200"
             }`}
           >
-            {source === 'manual' ? 'Registro manual' : `Ejercicio ${LEVELS.find((l) => l.id === source).label.toLowerCase()}`}
+            {source === "manual"
+              ? "Registro manual"
+              : `Ejercicio ${LEVELS.find((l) => l.id === source).label.toLowerCase()}`}
           </span>
         </div>
 
@@ -423,13 +476,15 @@ export default function ConverterModule({ incoming = null }) {
                       key={l.id}
                       type="button"
                       whileTap={{ scale: 0.97 }}
-                      disabled={busy === 'generate'}
+                      disabled={busy === "generate"}
                       onClick={() => handleGenerate(l.id, genKind)}
                       className="flex items-baseline justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left transition hover:border-white/30 hover:bg-white/10 disabled:opacity-50"
                       style={{ boxShadow: `inset 0 -3px 0 ${l.color}` }}
                     >
                       <span className="font-semibold">{l.label}</span>
-                      <span className="text-[11px] leading-tight text-white/50">{l.hint}</span>
+                      <span className="text-[11px] leading-tight text-white/50">
+                        {l.hint}
+                      </span>
                     </motion.button>
                   ))}
                 </div>
@@ -438,9 +493,9 @@ export default function ConverterModule({ incoming = null }) {
                   onChange={setGenKind}
                   label="Tipo de alfabeto del ejercicio"
                   options={[
-                    { value: 'random', label: 'Mixto' },
-                    { value: 'digits', label: '0-9' },
-                    { value: 'letters', label: 'a-z' },
+                    { value: "random", label: "Mixto" },
+                    { value: "digits", label: "0-9" },
+                    { value: "letters", label: "a-z" },
                   ]}
                 />
               </div>
@@ -455,30 +510,46 @@ export default function ConverterModule({ incoming = null }) {
               transition={{ duration: 0.35 }}
               className="space-y-5"
             >
-              <Section n="1" title="Alfabeto" hint={`${nfa.alphabet.length} de ${MAX_NFA_SYMBOLS} símbolos`}>
+              <Section
+                n="1"
+                title="Alfabeto"
+                hint={`${nfa.alphabet.length} de ${MAX_NFA_SYMBOLS} símbolos`}
+              >
                 <div className="space-y-3">
                   <Segmented
                     value={alphaKind}
                     onChange={switchAlphabet}
                     label="Tipo de símbolos"
                     options={[
-                      { value: 'digits', label: 'Números' },
-                      { value: 'letters', label: 'Letras' },
+                      { value: "digits", label: "Números" },
+                      { value: "letters", label: "Letras" },
                     ]}
                   />
                   <div className="flex flex-wrap gap-1.5">
                     {pool.map((s) => (
-                      <Chip key={s} active={nfa.alphabet.includes(s)} onClick={() => toggleSymbol(s)} label={`Símbolo ${s}`}>
+                      <Chip
+                        key={s}
+                        active={nfa.alphabet.includes(s)}
+                        onClick={() => toggleSymbol(s)}
+                        label={`Símbolo ${s}`}
+                      >
                         {s}
                       </Chip>
                     ))}
                   </div>
                 </div>
-                <p className="text-xs text-white/45">No se pueden mezclar números y letras. Cambiar entre números y letras borra las flechas.</p>
+                <p className="text-xs text-white/45">
+                  No se pueden mezclar números y letras. Cambiar entre números y
+                  letras borra las flechas.
+                </p>
               </Section>
 
               {/* ---- validación ---- */}
-              <div aria-live="polite" className="space-y-2" data-testid="validation">
+              <div
+                aria-live="polite"
+                className="space-y-2"
+                data-testid="validation"
+              >
                 {fresh &&
                   validation.errors.map((e) => (
                     <Banner key={e} tone="err">
@@ -493,24 +564,31 @@ export default function ConverterModule({ incoming = null }) {
                   ))}
                 {isAfd && (
                   <Banner tone="warn">
-                    <p className="font-semibold">⚠ Este autómata es un AFD, no un AFND.</p>
+                    <p className="font-semibold">
+                      ⚠ Este autómata es un AFD, no un AFND.
+                    </p>
                     <p className="mt-0.5 opacity-90">
-                      Ninguna celda de la tabla tiene más de un destino, así que ya es determinista y no necesita
-                      conversión. Para convertir, haz que algún símbolo salga de un estado hacia dos o más estados. Un
-                      AFD se reduce con la minimización (módulo 3).
+                      Ninguna celda de la tabla tiene más de un destino, así que
+                      ya es determinista y no necesita conversión. Para
+                      convertir, haz que algún símbolo salga de un estado hacia
+                      dos o más estados. Un AFD se reduce con la minimización
+                      (módulo 3).
                     </p>
                   </Banner>
                 )}
                 {isAfnd && (
                   <Banner tone="ok">
-                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">✓ AFND válido</p>
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">
+                      ✓ AFND válido
+                    </p>
                     <p>
-                      Es no determinista porque{' '}
+                      Es no determinista porque{" "}
                       {validation.nondeterministic.map((c, i) => (
                         <span key={`${c.state}${c.symbol}`}>
-                          {i > 0 && '; '}
-                          <span className="sym">{c.state}</span> con <span className="sym">{c.symbol}</span> va a{' '}
-                          <span className="sym">{c.targets.join(', ')}</span>
+                          {i > 0 && "; "}
+                          <span className="sym">{c.state}</span> con{" "}
+                          <span className="sym">{c.symbol}</span> va a{" "}
+                          <span className="sym">{c.targets.join(", ")}</span>
                         </span>
                       ))}
                       .
@@ -524,19 +602,23 @@ export default function ConverterModule({ incoming = null }) {
               <button
                 type="button"
                 onClick={() => registerWith(nfa, source)}
-                disabled={!isAfnd || busy === 'register'}
+                disabled={!isAfnd || busy === "register"}
                 className="btn-primary flex items-center justify-center gap-2 px-6 py-3 text-base"
               >
-                {busy === 'register' ? 'Registrando…' : 'Registrar AFND'}
+                {busy === "register" ? "Registrando…" : "Registrar AFND"}
               </button>
               <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={handleClear} className={secondaryBtn}>
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className={secondaryBtn}
+                >
                   Limpiar campos
                 </button>
                 <button
                   type="button"
                   onClick={() => handleGenerate(lastLevel, genKind)}
-                  disabled={busy === 'generate'}
+                  disabled={busy === "generate"}
                   title={`Genera otro ejercicio de nivel ${lvlLabel}`}
                   className={secondaryBtn}
                 >
@@ -553,17 +635,25 @@ export default function ConverterModule({ incoming = null }) {
             transition={{ duration: 0.35 }}
             className="min-w-0"
           >
-            <Section n="2" title="Autómata" hint="dibujo o formulario: son dos vistas del mismo autómata">
+            <Section
+              n="2"
+              title="Autómata"
+              hint="dibujo o formulario: son dos vistas del mismo autómata"
+            >
               <Segmented
                 value={mode}
                 onChange={setMode}
                 label="Forma de registro"
                 options={[
-                  { value: 'draw', label: 'Dibujar' },
-                  { value: 'form', label: 'Formulario' },
+                  { value: "draw", label: "Dibujar" },
+                  { value: "form", label: "Formulario" },
                 ]}
               />
-              {mode === 'draw' ? <NfaDrawer nfa={nfa} onChange={updateNfa} /> : <NfaForm nfa={nfa} onChange={updateNfa} />}
+              {mode === "draw" ? (
+                <NfaDrawer nfa={nfa} onChange={updateNfa} />
+              ) : (
+                <NfaForm nfa={nfa} onChange={updateNfa} />
+              )}
             </Section>
           </motion.div>
         </div>
@@ -571,27 +661,24 @@ export default function ConverterModule({ incoming = null }) {
 
       {/* ------------------------------ AFND registrado ------------------------------ */}
       {registered && regLayout && (
-        <section ref={registeredRef} className="glass scroll-mt-4 space-y-4 p-5" data-testid="registered" aria-label="AFND registrado">
+        <section
+          ref={registeredRef}
+          className="glass scroll-mt-4 space-y-4 p-5"
+          data-testid="registered"
+          aria-label="AFND registrado"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-bold">
               <span className="grad-text">AFND</span> registrado
             </h2>
             {staleRegistered && (
               <span className="rounded-full bg-amber-300/15 px-3 py-1 text-xs font-semibold text-amber-200">
-                Editaste el autómata: pulsa «Registrar AFND» para usar los cambios
+                Editaste el autómata: pulsa «Registrar AFND» para usar los
+                cambios
               </span>
             )}
           </div>
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,1fr)]">
-            <PanZoom bounds={regLayout.bounds} resetKey={registered.key} className="h-[420px]">
-              <AutomatonCanvas
-                automaton={registered.automaton}
-                layout={regLayout}
-                visible={regVisible}
-                highlight={NO_HIGHLIGHT}
-                last={null}
-              />
-            </PanZoom>
+          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
             <div className="space-y-4">
               <TransitionTable
                 testId="nfa-table"
@@ -599,35 +686,59 @@ export default function ConverterModule({ incoming = null }) {
                 alphabet={registered.automaton.alphabet}
                 rows={registered.table}
                 cellTone={(s, a) => {
-                  const row = registered.table.find((r) => r.state === s)
-                  return row.cells[a].length > 1 ? 'nd' : undefined
+                  const row = registered.table.find((r) => r.state === s);
+                  return row.cells[a].length > 1 ? "nd" : undefined;
                 }}
-                caption="→ estado inicial · estado dentro de un círculo = terminal (final) · las celdas resaltadas tienen más de un destino (por eso es AFND) · ∅ = sin flecha: ese símbolo va al estado error."
+                caption="→ estado inicial · estado dentro de un círculo = terminal (final) · las celdas resaltadas tienen más de un destino (por eso es AFND) · ∅ = sin flecha: ese símbolo va al estado error (ξ)."
               />
               <button
                 type="button"
                 onClick={convert}
-                disabled={busy === 'convert'}
+                disabled={busy === "convert"}
                 className="btn-primary flex w-full items-center justify-center gap-2 py-3.5 text-base"
               >
-                {busy === 'convert' ? 'Convirtiendo…' : 'Convertir a AFD'}
+                {busy === "convert" ? "Convirtiendo…" : "Convertir a AFD"}
               </button>
             </div>
+            <FormalStructure
+              name="AFND"
+              automaton={registered.automaton}
+              testId="formal-nfa"
+            />
           </div>
+          <PanZoom
+            bounds={regLayout.bounds}
+            resetKey={registered.key}
+            title="Diagrama de transición del AFND"
+            className="h-[460px]"
+          >
+            <AutomatonCanvas
+              automaton={registered.automaton}
+              layout={regLayout}
+              visible={regVisible}
+              highlight={NO_HIGHLIGHT}
+              last={null}
+            />
+          </PanZoom>
         </section>
       )}
 
       {/* ------------------------------ conversión ------------------------------ */}
       {conv && progress && dfaLayout && registered && (
-        <section ref={conversionRef} className="glass scroll-mt-4 space-y-4 p-5" data-testid="conversion" aria-label="Conversión a AFD">
+        <section
+          ref={conversionRef}
+          className="glass scroll-mt-4 space-y-4 p-5"
+          data-testid="conversion"
+          aria-label="Conversión a AFD"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-bold">
               Conversión <span className="grad-text">AFND → AFD</span>
             </h2>
             <span className="text-xs text-white/45">
-              {conv.dfa.automaton.states.length} estados en el AFD · Σ = {'{'}
-              {conv.dfa.automaton.alphabet.join(', ')}
-              {'}'}
+              {conv.dfa.automaton.states.length} estados en el AFD · Σ = {"{"}
+              {conv.dfa.automaton.alphabet.join(", ")}
+              {"}"}
             </span>
           </div>
           <Legend />
@@ -648,8 +759,10 @@ export default function ConverterModule({ incoming = null }) {
                 title="Tabla del AFND (de donde salen los datos)"
                 alphabet={registered.automaton.alphabet}
                 rows={registered.table}
-                rowTone={(s) => (progress.refRows[s] ? 'ref' : undefined)}
-                cellTone={(s, a) => (progress.refCells[`${s}|${a}`] ? 'ref' : undefined)}
+                rowTone={(s) => (progress.refRows[s] ? "ref" : undefined)}
+                cellTone={(s, a) =>
+                  progress.refCells[`${s}|${a}`] ? "ref" : undefined
+                }
               />
             </div>
 
@@ -670,38 +783,43 @@ export default function ConverterModule({ incoming = null }) {
           </div>
 
           {finished && (
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-2" data-testid="mapping">
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-2"
+              data-testid="mapping"
+            >
               <h3 className="font-semibold">Correspondencia de estados</h3>
               <ul className="flex flex-wrap gap-2 text-sm">
                 {conv.dfa.mapping.map((m) => (
-                  <li key={m.name} className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5">
+                  <li
+                    key={m.name}
+                    className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5"
+                  >
                     <span className="inline-flex items-center gap-1.5">
-                      <StateBadge name={m.name} final={m.final} className="sym h-8! min-w-8! text-cyan-200" />
+                      <StateBadge
+                        name={m.name}
+                        final={m.final}
+                        className="sym min-h-8! min-w-8! text-cyan-200"
+                      />
                       <span className="text-white/45">=</span>
-                      <span className="sym">{m.members.length ? `{${m.members.join(', ')}}` : '∅'}</span>
+                      <span className="sym">
+                        {m.members.length ? `{${m.members.join(", ")}}` : "∅"}
+                      </span>
                     </span>
                   </li>
                 ))}
               </ul>
             </motion.div>
           )}
+          {finished && (
+            <FormalStructure
+              name="AFD"
+              automaton={conv.dfa.automaton}
+              testId="formal-dfa"
+            />
+          )}
         </section>
-      )}
-
-      {conv && (
-        <WordTester
-          key={`${flash}-${conv.key}`}
-          enabled={finished}
-          stale={false}
-          examples={conv.examples}
-          run={run}
-          onRun={handleRunWord}
-          onClear={() => setRun(null)}
-          busy={busy === 'word'}
-          title="Probar una palabra en el AFD"
-          disabledHint="Termina la conversión para probar palabras"
-          placeholder="Escribe una palabra, p. ej. 0110"
-        />
       )}
 
       <HistoryPanel
@@ -710,16 +828,16 @@ export default function ConverterModule({ incoming = null }) {
         onLoad={loadFromHistory}
         onDelete={(id) =>
           setHistory((prev) => {
-            const next = prev.filter((h) => h.id !== id)
-            saveHistory(next, CONVERTER_KEY)
-            return next
+            const next = prev.filter((h) => h.id !== id);
+            saveHistory(next, CONVERTER_KEY);
+            return next;
           })
         }
         onClear={() => {
-          setHistory([])
-          saveHistory([], CONVERTER_KEY)
+          setHistory([]);
+          saveHistory([], CONVERTER_KEY);
         }}
       />
     </main>
-  )
+  );
 }

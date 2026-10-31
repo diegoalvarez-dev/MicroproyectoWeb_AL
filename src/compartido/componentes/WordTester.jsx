@@ -3,14 +3,14 @@ import { AnimatePresence, motion } from 'framer-motion'
 
 const SPEEDS = [0.5, 1, 2, 4]
 
-const CHAR_STYLE = {
+export const CHAR_STYLE = {
   idle: 'border-white/10 bg-white/5 text-white/45',
   cur: 'border-cyan-300 bg-cyan-300/20 text-cyan-100 shadow-[0_0_18px_-2px_rgba(34,211,238,.9)] -translate-y-1',
   ok: 'border-emerald-300/70 bg-emerald-300/15 text-emerald-100',
   bad: 'border-rose-400/80 bg-rose-400/20 text-rose-100',
 }
 
-function charTone(i, run) {
+export function charTone(i, run) {
   const { result, k, finished } = run
   if (result.invalid_symbol) return i === result.fail_index ? 'bad' : 'idle'
   if (finished) {

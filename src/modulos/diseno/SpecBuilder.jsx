@@ -454,10 +454,6 @@ function RuleCard({ rule, spec, onPatch, onRemove }) {
   )
 }
 
-const KINDS = [
-  { id: 'AFD', title: 'AFD', sub: 'Determinista', desc: 'De cada estado sale exactamente una flecha por símbolo.' },
-  { id: 'AFND', title: 'AFND', sub: 'No determinista', desc: 'Un símbolo puede salir de un estado hacia uno o más estados.' },
-]
 
 const secondaryBtn =
   'flex items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/5 px-3 py-2.5 text-sm font-medium text-white/80 transition hover:border-white/30 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50'
@@ -465,11 +461,9 @@ const secondaryBtn =
 export default function SpecBuilder({
   spec,
   onChange,
-  kind,
-  onKind,
   validation,
-  onBuild,
-  building,
+  onRegister,
+  registerState,
   onGenerate,
   generating,
   onClear,
@@ -689,43 +683,27 @@ export default function SpecBuilder({
 
       <hr className="border-white/10" />
 
-      {/* ---- tipo de autómata y diseño ---- */}
+           {/* ---- registrar las indicaciones (el diseño AFD/AFND se elige en el panel de la derecha) ---- */}
       <section className="space-y-3">
-        <h3 className="font-semibold">¿Qué tipo de autómata?</h3>
-        <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Tipo de autómata">
-          {KINDS.map((k) => (
-            <button
-              key={k.id}
-              type="button"
-              role="radio"
-              aria-checked={kind === k.id}
-              onClick={() => onKind(k.id)}
-              className={`rounded-2xl border p-3 text-left transition ${
-                kind === k.id
-                  ? 'border-cyan-300/70 bg-cyan-300/10 shadow-[0_0_24px_-8px_rgba(34,211,238,.8)]'
-                  : 'border-white/10 bg-white/5 hover:border-white/30'
-              }`}
-            >
-              <span className="flex items-baseline gap-2">
-                <span className="text-lg font-bold">{k.title}</span>
-                <span className="text-xs text-white/50">{k.sub}</span>
-              </span>
-              <span className="mt-1 block text-xs leading-snug text-white/55">{k.desc}</span>
-            </button>
-          ))}
-        </div>
-
         <button
           type="button"
-          onClick={onBuild}
-          disabled={!validation.ok || building || validation.loading}
+          onClick={onRegister}
+          disabled={!validation.ok || validation.loading || registerState === 'done'}
+          data-testid="register-btn"
           className="btn-primary flex w-full items-center justify-center gap-2 py-3.5 text-base"
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="m12 2 2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z" />
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5 12.5 10 17.5 19 7" />
           </svg>
-          {building ? 'Diseñando…' : `Diseñar ${kind}`}
+          {registerState === 'done' ? 'Indicaciones registradas' : 'Registrar indicaciones'}
         </button>
+        <p className="text-xs text-white/50" aria-live="polite">
+          {registerState === 'done'
+            ? 'Listo: elige AFD o AFND y pulsa «Diseñar» en el panel de diseño.'
+            : registerState === 'stale'
+              ? 'Cambiaste las indicaciones: vuelve a registrarlas para diseñar con los cambios.'
+              : 'Cuando las indicaciones estén válidas, regístralas para poder diseñar el autómata.'}
+        </p>
 
         <div className="grid grid-cols-2 gap-2">
           <button type="button" onClick={onClear} className={secondaryBtn}>

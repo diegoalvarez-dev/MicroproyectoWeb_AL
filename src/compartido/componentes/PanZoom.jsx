@@ -1,4 +1,5 @@
 import { createContext, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 // Lo que el lienzo (AutomatonCanvas) necesita saber para dejar mover los estados.
 export const DiagramContext = createContext(null)
@@ -35,14 +36,34 @@ function ToolButton({ label, onClick, children, active }) {
  * reducir (rueda del mouse o botones). `bounds` es el rectángulo del dibujo; al
  * cargar un autómata nuevo, o al entrar/salir de pantalla completa (`resetKey`),
  * se encuadra automáticamente para que se vea completo.
+ *
+ *   title      título que se ve arriba a la izquierda del diagrama (también en pantalla completa)
+ *   overlay    contenido que solo se ve en pantalla completa (p. ej. la palabra que se prueba)
+ *   footer     contenido que va debajo del diagrama solo en pantalla completa (p. ej. los controles de pasos)
+ *   expanded / onToggleExpand: si el padre maneja la pantalla completa. Si no se pasan,
+ *   el propio PanZoom la maneja (así TODOS los diagramas tienen el botón).
  */
-export default function PanZoom({ bounds, resetKey, expanded, onToggleExpand, className = '', children }) {
+export default function PanZoom({
+  bounds,
+  resetKey,
+  expanded,
+  onToggleExpand,
+  className = '',
+  title,
+  overlay,
+  footer,
+  children,
+}) {
   const boxRef = useRef(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [view, setView] = useState({ k: 1, x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
   const touched = useRef(false) // el usuario ya movió o amplió: no reencuadrar solo
   const drag = useRef(null)
+  const [selfFull, setSelfFull] = useState(false) // pantalla completa propia (cuando el padre no la maneja)
+  const external = !!onToggleExpand
+  const isFull = external ? !!expanded : selfFull
+  const toggleFull = external ? onToggleExpand : () => setSelfFull((v) => !v)
   const [moving, setMoving] = useState(false) // true = se pueden arrastrar los estados
   const [overrides, setOverrides] = useState({}) // posiciones que el usuario cambió: { id: {x, y} }
   const viewRef = useRef(view)
@@ -57,18 +78,20 @@ export default function PanZoom({ bounds, resetKey, expanded, onToggleExpand, cl
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [selfFull])
 
   const fit = useCallback(() => {
     if (!size.w || !size.h) return
     const pad = 20
-    const k = clamp(Math.min((size.w - pad * 2) / bounds.w, (size.h - pad * 2) / bounds.h), MIN_K, 1.3)
+    const top = title ? 52 : pad // deja libre la franja del título
+    const availH = size.h - top - pad
+    const k = clamp(Math.min((size.w - pad * 2) / bounds.w, availH / bounds.h), MIN_K, 1.3)
     setView({
       k,
       x: size.w / 2 - (bounds.x + bounds.w / 2) * k,
-      y: size.h / 2 - (bounds.y + bounds.h / 2) * k,
+      y: top + availH / 2 - (bounds.y + bounds.h / 2) * k,
     })
-  }, [size, bounds])
+  }, [size, bounds, title])
 
   const refit = useCallback(() => {
     touched.current = false
@@ -93,11 +116,24 @@ export default function PanZoom({ bounds, resetKey, expanded, onToggleExpand, cl
   // autómata nuevo o cambio de pantalla completa: encuadrar de nuevo
   useEffect(() => {
     touched.current = false
-  }, [resetKey])
+  }, [resetKey, selfFull])
   // y mientras el usuario no toque nada, seguir el tamaño del contenedor
   useEffect(() => {
     if (!touched.current) fit()
-  }, [fit, resetKey])
+  }, [fit, resetKey, selfFull])
+
+  // pantalla completa propia: Esc la cierra y la página de atrás no se desplaza
+  useEffect(() => {
+    if (!selfFull) return undefined
+    const onKey = (e) => e.key === 'Escape' && setSelfFull(false)
+    window.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [selfFull])
 
   const zoomAt = useCallback((factor, cx, cy) => {
     touched.current = true
@@ -120,7 +156,7 @@ export default function PanZoom({ bounds, resetKey, expanded, onToggleExpand, cl
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [zoomAt])
+  }, [zoomAt, selfFull])
 
   const onPointerDown = (e) => {
     if (e.button !== 0) return
@@ -142,13 +178,14 @@ export default function PanZoom({ bounds, resetKey, expanded, onToggleExpand, cl
   }
 
   const dot = 26 * view.k
-  return (
+  const boxClass = selfFull ? 'min-h-0 flex-1' : className
+  const box = (
     <div
       ref={boxRef}
       data-testid="panzoom"
       className={`relative select-none overflow-hidden rounded-2xl border border-white/10 bg-[#070b1f]/70 ${
         dragging ? 'cursor-grabbing' : 'cursor-grab'
-      } ${className}`}
+      } ${boxClass}`}
       style={{
         touchAction: 'none',
         backgroundImage: dot > 9 ? 'radial-gradient(rgba(255,255,255,.09) 1.2px, transparent 1.2px)' : 'none',
@@ -166,6 +203,15 @@ export default function PanZoom({ bounds, resetKey, expanded, onToggleExpand, cl
           <DiagramContext.Provider value={ctx}>{children}</DiagramContext.Provider>
         </g>
       </svg>
+
+      {title && (
+        <div
+          data-testid="panzoom-title"
+          className="pointer-events-none absolute left-3 top-3 max-w-[calc(100%-15rem)] truncate rounded-xl border border-white/10 bg-[#0b1030]/85 px-3 py-1.5 text-sm font-semibold text-white/90 backdrop-blur"
+        >
+          {title}
+        </div>
+      )}
 
       <div
         className="absolute right-3 top-3 flex items-center gap-0.5 rounded-xl border border-white/10 bg-[#0b1030]/90 p-1 shadow-lg backdrop-blur"
@@ -207,20 +253,20 @@ export default function PanZoom({ bounds, resetKey, expanded, onToggleExpand, cl
             </Ico>
           </ToolButton>
         )}
-        {onToggleExpand && (
-          <ToolButton label={expanded ? 'Salir de pantalla completa' : 'Pantalla completa'} onClick={onToggleExpand}>
-            {expanded ? (
-              <Ico>
-                <path d="M3 8h3a2 2 0 0 0 2-2V3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M21 16h-3a2 2 0 0 0-2 2v3" />
-              </Ico>
-            ) : (
-              <Ico>
-                <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
-              </Ico>
-            )}
-          </ToolButton>
-        )}
+        <ToolButton label={isFull ? 'Salir de pantalla completa' : 'Pantalla completa'} onClick={toggleFull}>
+          {isFull ? (
+            <Ico>
+              <path d="M3 8h3a2 2 0 0 0 2-2V3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M21 16h-3a2 2 0 0 0-2 2v3" />
+            </Ico>
+          ) : (
+            <Ico>
+              <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
+            </Ico>
+          )}
+        </ToolButton>
       </div>
+
+      {isFull && overlay}
 
       <div className="pointer-events-none absolute bottom-2.5 left-3 flex items-center gap-3 text-[11px] text-white/40">
         <span className="tabular-nums text-white/60">{Math.round(view.k * 100)}%</span>
@@ -232,4 +278,21 @@ export default function PanZoom({ bounds, resetKey, expanded, onToggleExpand, cl
       </div>
     </div>
   )
+
+  if (!external && selfFull) {
+    return (
+      <>
+        {/* marcador para que la página no salte mientras el diagrama está en pantalla completa */}
+        <div className={`rounded-2xl border border-dashed border-white/10 ${className}`} aria-hidden="true" />
+        {createPortal(
+          <div className="fixed inset-0 z-[60] flex flex-col gap-3 bg-[#060919] p-4" data-testid="panzoom-full">
+            {box}
+            {footer}
+          </div>,
+          document.body,
+        )}
+      </>
+    )
+  }
+  return box
 }
